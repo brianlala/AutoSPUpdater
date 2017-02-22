@@ -1,6 +1,6 @@
 ﻿
 # Configures the server for WinRM and WSManCredSSP
-Write-Host "Configuring PowerShell remoting..."
+Write-Host -ForegroundColor White " - Configuring PowerShell remoting..."
 $winRM = Get-Service -Name winrm
 If ($winRM.Status -ne "Running") {Start-Service -Name winrm}
 Set-ExecutionPolicy Bypass -Force

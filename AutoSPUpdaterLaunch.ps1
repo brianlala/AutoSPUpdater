@@ -41,9 +41,9 @@ param
     [Switch]$skipParallelInstall = $false
 )
 
-$servicesToStop = ("SPTimerV4","SPSearch4","OSearch14","OSearch15","OSearch16","SPSearchHostController","IISADMIN")
+$servicesToStop = ("SPTimerV4","SPSearch4","OSearch14","OSearch15","OSearch16","SPSearchHostController")
 # Same set of services, just in a slightly different order
-$servicesToStart = ("SPSearchHostController","OSearch14","OSearch15","OSearch16","SPTimerV4","SPSearch4","IISADMIN")
+$servicesToStart = ("SPSearchHostController","OSearch14","OSearch15","OSearch16","SPTimerV4","SPSearch4")
 
 #region Check If Admin
 # First check if we are running this under an elevated session. Pulled from the script at http://gallery.technet.microsoft.com/scriptcenter/1b5df952-9e10-470f-ad7c-dc2bdc2ac946
@@ -111,14 +111,6 @@ if (!(Test-Path -Path $patchPath -ErrorAction SilentlyContinue))
         throw "Patch path `"$patchPath`" does not appear to be valid."
     }
 }
-if ($patchPath -like "*:*")
-{
-    Write-Host -ForegroundColor Yellow " - The path where updates reside ($patchPath) is identified by a local drive letter."
-    Write-Host -ForegroundColor Yellow " - You should either use a UNC path that all farm servers can access (recommended),"
-    Write-Host -ForegroundColor Yellow " - or create identical paths and copy all required files on each farm server."
-    Write-Host -ForegroundColor White " - Ctrl-C to exit, or"
-    Pause "continue updating" "y"
-}
 Write-Host -ForegroundColor White " - `$patchPath is: $patchPath"
 $PSConfig = "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$spVer\BIN\psconfig.exe"
 $PSConfigUI = "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$spVer\BIN\psconfigui.exe"
@@ -128,61 +120,67 @@ UnblockFiles -path $patchPath
 
 #region Get Farm Servers & Credentials 
 [array]$farmServers = (Get-SPFarm).Servers | Where-Object {$_.Role -ne "Invalid"}
-if (Confirm-LocalSession) {Write-Host -ForegroundColor White " - Updating $env:COMPUTERNAME first, then additional farm server(s):"}
-foreach ($farmserver in $farmServers | Where-Object {$_.Name -ne $env:COMPUTERNAME})
+if ($patchPath -like "*:*" -and $farmServers.Count -gt 1)
 {
-    if (Confirm-LocalSession) {Write-Host -ForegroundColor White "  - $($farmserver.Name)"}
-    [array]$remoteFarmServers += $farmServer.Name
+    Write-Host -ForegroundColor Yellow " - The path where updates reside ($patchPath) is identified by a local drive letter."
+    Write-Host -ForegroundColor Yellow " - You should either use a UNC path that all farm servers can access (recommended),"
+    Write-Host -ForegroundColor Yellow " - or create identical paths and copy all required files on each farm server."
+    Write-Host -ForegroundColor White " - Ctrl-C to exit, or"
+    Pause "continue updating" "y"
 }
-if ([string]::IsNullOrEmpty($remoteAuthPassword)) {$password = Read-Host -AsSecureString -Prompt "Please enter the password for $env:USERDOMAIN\$env:USERNAME"}
-elseif ($remoteAuthPassword.GetType().Name -ne "SecureString")
+
+if ((Confirm-LocalSession) -and $farmServers.Count -gt 1) # Only do this stuff on the first (local) server, and only if we have other servers in the farm.
 {
-    $password = ConvertTo-SecureString -String $remoteAuthPassword -AsPlainText -Force
-}
-else
-{
-    $password = $remoteAuthPassword
-}
-if ($remoteFarmServers.Count -ge 1)
-{
-    if (Confirm-LocalSession)
+    Write-Host -ForegroundColor White " - Updating $env:COMPUTERNAME first, then additional farm server(s):"
+    foreach ($farmserver in $farmServers | Where-Object {$_.Name -ne $env:COMPUTERNAME})
     {
-        while ($credentialVerified -ne $true)
+        if (Confirm-LocalSession) {Write-Host -ForegroundColor White "  - $($farmserver.Name)"}
+        [array]$remoteFarmServers += $farmServer.Name
+    }
+    if ([string]::IsNullOrEmpty($remoteAuthPassword)) {$password = Read-Host -AsSecureString -Prompt "Please enter the password for $env:USERDOMAIN\$env:USERNAME"}
+    elseif ($remoteAuthPassword.GetType().Name -ne "SecureString")
+    {
+        $password = ConvertTo-SecureString -String $remoteAuthPassword -AsPlainText -Force
+    }
+    else
+    {
+        $password = $remoteAuthPassword
+    }
+    while ($credentialVerified -ne $true)
+    {
+        if ($password) # In case this is an automatic re-launch of the local script, re-use the password from the remote auth credential
         {
-            if ($password) # In case this is an automatic re-launch of the local script, re-use the password from the remote auth credential
-            {
-                Write-Host -ForegroundColor White " - Using pre-provided credentials..."
-                $credential = New-Object System.Management.Automation.PsCredential $env:USERDOMAIN\$env:USERNAME,$password
-            }
-            if (!$credential) # Otherwise prompt for the remote auth or AutoAdminLogon credential
-            {
-                Write-Host -ForegroundColor White " - Prompting for remote/autologon credentials..."
-                $credential = $host.ui.PromptForCredential("AutoSPUpdater - Remote/Automatic Install", "Enter Credentials for Remote/Automatic Authentication:", "$env:USERDOMAIN\$env:USERNAME", "NetBiosUserName")
-            }
-            $currentDomain = "LDAP://" + ([ADSI]"").distinguishedName
-            $null,$user = $credential.Username -split "\\"
-            if (($user -ne $null) -and ($credential.Password -ne $null)) {$passwordPlain = ConvertTo-PlainText $credential.Password}
-            else
-            {
-                throw "Valid credentials are required for remote authentication."
-                Pause "exit"
-            }
-            Write-Host -ForegroundColor White " - Checking credentials: `"$($credential.Username)`"..." -NoNewline
-            $dom = New-Object System.DirectoryServices.DirectoryEntry($currentDomain,$user,$passwordPlain)
-            If ($dom.Path -ne $null)
-            {
-                Write-Host -ForegroundColor Black -BackgroundColor Green "Verified."
-                $credentialVerified = $true
-            }
-            else
-            {
-                Write-Host -BackgroundColor Red -ForegroundColor Black "Invalid - please try again."
-                Remove-Variable -Name remoteAuthPassword -ErrorAction SilentlyContinue
-                Remove-Variable -Name remoteAuthPasswordPlain -ErrorAction SilentlyContinue
-                Remove-Variable -Name password -ErrorAction SilentlyContinue
-                Remove-Variable -Name passwordPlain -ErrorAction SilentlyContinue
-                Remove-Variable -Name credential -ErrorAction SilentlyContinue
-            }
+            Write-Host -ForegroundColor White " - Using pre-provided credentials..."
+            $credential = New-Object System.Management.Automation.PsCredential $env:USERDOMAIN\$env:USERNAME,$password
+        }
+        if (!$credential) # Otherwise prompt for the remote auth or AutoAdminLogon credential
+        {
+            Write-Host -ForegroundColor White " - Prompting for remote/autologon credentials..."
+            $credential = $host.ui.PromptForCredential("AutoSPUpdater - Remote/Automatic Install", "Enter Credentials for Remote/Automatic Authentication:", "$env:USERDOMAIN\$env:USERNAME", "NetBiosUserName")
+        }
+        $currentDomain = "LDAP://" + ([ADSI]"").distinguishedName
+        $null,$user = $credential.Username -split "\\"
+        if (($user -ne $null) -and ($credential.Password -ne $null)) {$passwordPlain = ConvertTo-PlainText $credential.Password}
+        else
+        {
+            throw "Valid credentials are required for remote authentication."
+            Pause "exit"
+        }
+        Write-Host -ForegroundColor White " - Checking credentials: `"$($credential.Username)`"..." -NoNewline
+        $dom = New-Object System.DirectoryServices.DirectoryEntry($currentDomain,$user,$passwordPlain)
+        If ($dom.Path -ne $null)
+        {
+            Write-Host -ForegroundColor Black -BackgroundColor Green "Verified."
+            $credentialVerified = $true
+        }
+        else
+        {
+            Write-Host -BackgroundColor Red -ForegroundColor Black "Invalid - please try again."
+            Remove-Variable -Name remoteAuthPassword -ErrorAction SilentlyContinue
+            Remove-Variable -Name remoteAuthPasswordPlain -ErrorAction SilentlyContinue
+            Remove-Variable -Name password -ErrorAction SilentlyContinue
+            Remove-Variable -Name passwordPlain -ErrorAction SilentlyContinue
+            Remove-Variable -Name credential -ErrorAction SilentlyContinue
         }
     }
 }
@@ -204,7 +202,7 @@ foreach ($avPath in $avPaths)
 
 #region Pause Search Service Application
 # Only need to pause the Search Service Application(s) if running SharePoint 2013 and only attempt on the first (local) server in the farm
-if ($spVer -ge 15 -and (Confirm-LocalSession))
+if ($spVer -eq 15 -and (Confirm-LocalSession))
 {
     Request-SPSearchServiceApplicationStatus -desiredStatus Paused
 }
@@ -270,13 +268,25 @@ else
 }
 #endregion
 
+#region Clear Configuration Cache
+Clear-SPConfigurationCache
+#endregion
+
 #region Start Services
 Write-Host -ForegroundColor White " - Re-enabling & starting services..."
 ForEach ($service in $servicesToStart)
 {
+    if ($service -like "OSearch*") # The OSearch* service by default has startup type "Manual" so let's keep it that way
+    {
+        $startupType = "Manual"
+    }
+    else
+    {
+        $startupType = "Automatic"
+    }
     if ((Get-Variable -Name $service"WasRunning" -ValueOnly -ErrorAction SilentlyContinue) -eq $true)
     {
-        Set-Service -Name $service -StartupType Automatic
+        Set-Service -Name $service -StartupType $startupType
         Write-Host -ForegroundColor White "  - Starting service $((Get-Service -Name $service).DisplayName)..."
         Start-Service -Name $service
     }
@@ -301,7 +311,7 @@ if (Confirm-LocalSession)
 
 #region Resume Search Service Application
 # Only need to resume a paused Search Service Application(s) if running SharePoint 2013
-if ($spVer -ge 15)
+if ($spVer -eq 15)
 {
    Request-SPSearchServiceApplicationStatus -desiredStatus Online
 }
@@ -310,32 +320,51 @@ if ($spVer -ge 15)
 #region PSConfig
 if (Test-UpgradeRequired -eq $true)
 {
-##    # Unload and re-load the SP PowerShell Snapin. This seems to be required to force the server to detect that content databases need updating.
-##    Remove-PSSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue
-##    Import-SharePointPowerShell
-
     #region Upgrade Content Databases
     # Only upgrade databases if PSConfig is also required to be run
-    Write-Host -ForegroundColor Cyan " - The script has determined that content databases may need to be upgraded."
-    Write-Host -ForegroundColor Cyan " - This seems to work best from WFE servers or servers in the farm that have the Web Application service running."
-    Write-Host -ForegroundColor Yellow " - Please ensure that all servers in the farm have completed the binary install phase before proceeding."
-    Pause "proceed with content database upgrade" "y"
-    Upgrade-ContentDatabases
+    if (Confirm-LocalSession) # Only upgrade content databases if running on the local (primary) farm server
+    {
+        Write-Host -ForegroundColor Cyan " - The script has determined that content databases may need to be upgraded."
+        # Only need to pause if this isn't the only server in the farm
+        if ($farmServers.Count -gt 1)
+        {
+            Write-Host -ForegroundColor Yellow " - Please ensure that all servers in the farm have completed the binary install phase before proceeding."
+            Pause "proceed with content database upgrade" "y"
+        }
+        #region Launch Central Admin - Database Status
+        if (Confirm-LocalSession)
+        {
+            $caWebApp = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.IsAdministrationWebApplication}
+            Write-Host -ForegroundColor White " - Launching `"$($caWebApp.Url)/_admin/DatabaseStatus.aspx`"..."
+            Write-Host -ForegroundColor White " - You can use this to track the status of each content database upgrade."
+            Start-Sleep -Seconds 3
+            Start-Process "$($caWebApp.Url)/_admin/DatabaseStatus.aspx" -WindowStyle Minimized
+        }
+        #endregion
+        Upgrade-ContentDatabases -spVer $spVer
+    }
     #endregion
     # Good post for troubleshooting PSConfig: http://itgroove.net/mmman/2015/04/29/how-to-resolve-failures-in-the-sharepoint-product-config-psconfig-tool/
     Write-Host -ForegroundColor Cyan " - The script has determined that PSConfig needs to be run on this server ($env:COMPUTERNAME)."
     Write-Host -ForegroundColor White " - Running: $PSConfig"
-    if (Confirm-LocalSession) # Only pause to confirm if running on a local (non-remote) server
+    # Only need to pause if this isn't the only server in the farm
+    if ($farmServers.Count -gt 1)
     {
         Write-Host -ForegroundColor Yellow " - Please ensure that all servers in the farm have completed the binary install phase before proceeding."
         Pause "proceed with farm configuration wizard (PSConfig.exe)" "y"
     }
-    else # Just display a message about no PSConfig progress over remote session
+    # Display a message about no PSConfig progress over remote session
+    if (!(Confirm-LocalSession))
     {
-        Write-Host -ForegroundColor White " - Note that while PSConfig is running remotely there will be no progress shown. Please allow several minutes for PSConfig to complete."
+        Write-Host -ForegroundColor White " - Note that while PSConfig is running remotely there will be no progress shown, and may take several minutes to complete."
+        $passThruParameter = @{PassThru = $true}
+    }
+    else
+    {
+        $passThruParameter = @{}
     }
     $attemptNumber = 1
-    Start-Process -FilePath $PSConfig -ArgumentList "-cmd upgrade -inplace b2b -wait -force -cmd applicationcontent -install -cmd installfeatures -cmd secureresources" -NoNewWindow -Wait -PassThru
+    Start-Process -FilePath $PSConfig -ArgumentList "-cmd upgrade -inplace b2b -wait -force -cmd applicationcontent -install -cmd installfeatures -cmd secureresources" -NoNewWindow -Wait @passThruParameter
     $PSConfigLastError = Check-PSConfig
     while (!([string]::IsNullOrEmpty($PSConfigLastError)) -and $attemptNumber -le 4)
     {

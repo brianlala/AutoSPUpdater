@@ -38,7 +38,7 @@ function InstallUpdatesFromPatchPath ($patchPath, $spVer)
         {
             # Get the file name only, in case $updateToInstall includes part of a path (e.g. is in a subfolder)
             $splitUpdate = Split-Path -Path $updateToInstall -Leaf
-            Write-Host -ForegroundColor Cyan "   - Installing $splitUpdate..." -NoNewline
+            Write-Host -ForegroundColor Cyan "   - Installing $splitUpdate from `"$($updateToInstall.Directory.Name)`"..." -NoNewline
             $startTime = Get-Date
             Start-Process -FilePath "$updateToInstall" -ArgumentList "/passive /norestart" -LoadUserProfile
             Show-Progress -Process $($splitUpdate -replace ".exe", "") -Color Cyan -Interval 5
@@ -62,8 +62,11 @@ function InstallUpdatesFromPatchPath ($patchPath, $spVer)
                 else 
                 {
                     Write-Host -ForegroundColor Yellow "   - $($oPatchInstallResultCodes.$oPatchInstallResultCode)"
-                    Write-Host -ForegroundColor Yellow "   - Please log on to this server ($env:COMPUTERNAME) now, and install the update manually."
-                    Pause "continue once the update has been successfully installed manually" "y"
+                    if ($oPatchInstallResultCode -ne "17025") # i.e. "Patch already installed"
+                    {
+                        Write-Host -ForegroundColor Yellow "   - Please log on to this server ($env:COMPUTERNAME) now, and install the update manually."
+                        Pause "continue once the update has been successfully installed manually" "y"
+                    }
                 }
             }
             Write-Host -ForegroundColor White "   - $splitUpdate install completed in $delta."
@@ -117,7 +120,7 @@ function Install-Remote ($skipParallelInstall, $remoteFarmServers, $credential, 
                                                                             Enable-RemoteSession -Server $server -Password $(ConvertFrom-SecureString $($credential.Password)) -launchPath $launchPath; `
                                                                             Start-RemoteUpdate -Server $server -Password $(ConvertFrom-SecureString $($credential.Password)) -launchPath $launchPath -patchPath $patchPath -spVer $spver; `
                                                                             Pause `"exit`"; `
-                                                                            Stop-Transcript}" -Verb Runas
+                                                                            Stop-Transcript -ErrorAction SilentlyContinue}" -Verb Runas
             Start-Sleep 10
         }
         else # Launch each farm server install in sequence, one-at-a-time, or run these steps on the current $targetServer
@@ -164,12 +167,12 @@ function Pause($action, $key)
         $actionString = " - Press any key to $action..."
         if (-not $unattended)
         {
-            Write-Host $actionString
+            Write-Host -ForegroundColor White $actionString
             $null = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
         }
         else
         {
-            Write-Host " - Skipping pause due to -unattended switch: $actionString"
+            Write-Host -ForegroundColor White " - Skipping pause due to -unattended switch: $actionString"
         }
     }
     else
@@ -384,6 +387,7 @@ function Request-SPSearchServiceApplicationStatus ()
 
 ($ssa.IsPaused() -band 0x200) -ne 0 #The search index is being repartitioned.
 #>
+    [array]$farmServers = (Get-SPFarm).Servers | Where-Object {$_.Role -ne "Invalid"}
 
     switch ($desiredStatus)
     {
@@ -405,7 +409,8 @@ function Request-SPSearchServiceApplicationStatus ()
                 }
                 else
                 {
-                    if ($action -eq "Resume")
+                    # Only pause if we are resuming, and if there are multiple farm servers
+                    if ($action -eq "Resume" -and $farmServers.Count -gt 1)
                     {
                         Pause "$($action.ToLower()) `"$($searchServiceApplication.Name)`" after all installs have completed" "y"
                     }
@@ -416,13 +421,6 @@ function Request-SPSearchServiceApplicationStatus ()
                         if (!$?) {throw}
                         Invoke-Expression -Command "$statusCheck"
                         if (!$?) {throw}
-    ##                    While (!(Invoke-Expression -Command "$statusCheck"))
-    ##                    {
-    ##                        Write-Host -ForegroundColor White "." -NoNewline
-    ##                        Start-Sleep -Seconds 1
-    ##                        $searchServiceApplication = Get-SPEnterpriseSearchServiceApplication -Identity $searchServiceApplication
-    ##                    }
-    ##                    Write-Host -ForegroundColor White "."
                         if (Invoke-Expression -Command "$statusCheck")
                         {
                             Write-Host -ForegroundColor White "  - `"$($searchServiceApplication.Name)`" is now " -NoNewline
@@ -447,15 +445,88 @@ function Request-SPSearchServiceApplicationStatus ()
         Write-Host -ForegroundColor White " - Done $($actionWord.ToLower()) Search Service Application(s)."
     }
 }
-function Upgrade-ContentDatabases
+function Upgrade-ContentDatabases ($spVer)
 {
-    Write-Host -ForegroundColor White " - Upgrading SharePoint content databases:"
-    [array]$contentDatabases = Get-SPContentDatabase
-    foreach ($contentDatabase in $contentDatabases)
+    $upgradeContentDBScriptBlock = {
+        ##$Host.UI.RawUI.WindowTitle = "-- Upgrading Content Databases --"
+        ##$Host.UI.RawUI.BackgroundColor = "Black"
+        Add-PSSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue
+        Write-Host -ForegroundColor White " - Upgrading SharePoint content databases:"
+        [array]$contentDatabases = Get-SPContentDatabase
+        foreach ($contentDatabase in $contentDatabases)
+        {
+            Write-Host -ForegroundColor White "  - $($contentDatabase.Name)..."
+            $contentDatabase | Upgrade-SPContentDatabase -Confirm:$false -Verbose
+            Write-Host -ForegroundColor White "  - Completed upgrading $($contentDatabase.Name)."
+        }
+    }
+    # Kick off a separate PowerShell process to update content databases prior to running PSConfig
+    Write-Host -ForegroundColor White " - Upgrading content databases in a separate process..."
+    # Some special accomodations for older OSes and PowerShell versions
+    if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.1*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($spVer -eq "14"))
     {
-        Write-Host -ForegroundColor White "  - $($contentDatabase.Name)..."
-        $contentDatabase | Upgrade-SPContentDatabase -Confirm:$false
+        $upgradeContentDBJob = Start-Job -Name "UpgradeContentDBJob" -ScriptBlock $upgradeContentDBScriptBlock
+        Write-Host -ForegroundColor Cyan " - Waiting for content databases to finish upgrading..." -NoNewline
+        While ($upgradeContentDBJob.State -eq "Running")
+        {
+            # Wait for job to complete
+            Write-Host -ForegroundColor Cyan "." -NoNewline
+            Start-Sleep -Seconds 1
+        }
+        Write-Host -ForegroundColor Green "$($upgradeContentDBJob.State)."
+    }
+    else 
+    {
+        Start-Job -Name "UpgradeContentDBJob" -ScriptBlock $upgradeContentDBScriptBlock | Receive-Job -Wait
     }
     Write-Host -ForegroundColor White " - Done upgrading databases."
+}
+function Clear-SPConfigurationCache
+{
+    # Based on manual steps provided here:
+    # http://blogs.msdn.com/b/jamesway/archive/2011/05/23/sharepoint-2010-clearing-the-configuration-cache.aspx
+    Try
+    {
+        Write-Host -ForegroundColor White " - Clearing SP configuration cache..."
+        if ((Get-Service -Name SPTimerV4).Status -eq "Running")
+        {
+            # Stop SP Timer Service
+            Write-Host -ForegroundColor White "  - Stopping timer service..."
+            Stop-Service SPTimerV4
+        }
+        # Get the location of the cache files; if there is more than one folder, grab the latest one
+        $cacheParentDir = "$env:SystemDrive\ProgramData\Microsoft\SharePoint\Config"
+        $cacheSubDir = Get-ChildItem -Path $cacheParentDir -Filter "*-*-*-*-*" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        $cacheDir = Join-Path -Path $cacheParentDir -ChildPath $cacheSubDir
+        # Grab the cache.ini file
+        $cacheIni = Get-Content "$cacheDir\cache.ini"
+        # Replace the contents of the cache.ini file with a single '1'
+        Write-Host -ForegroundColor White "  - Modifying cache.ini file..."
+        If ($cacheIni -ne "1")
+        {
+            Set-Content -Path "$cacheDir\cache.ini" -Value "1" -Force
+        }
+        # Delete all the XML files in the folder
+        Write-Host -ForegroundColor White "  - Purging XML files from $cacheDir..."
+        ForEach ($xmlFile in (Get-ChildItem -Path $cacheDir -Filter "*.XML"))
+        {
+            Remove-Item -Path (Join-Path -Path $cacheDir -ChildPath $xmlFile)
+        }
+    }
+    Catch
+    {
+        Write-Warning $_
+    }
+
+    Finally
+    {
+        if ((Get-Service -Name SPTimerV4).Status -ne "Running")
+        {
+            # Restart the SP Timer Service
+            Write-Host -ForegroundColor White "  - Attempting to start timer service..."
+            Start-Service SPTimerV4 -ErrorAction SilentlyContinue
+        }
+        Write-Host -ForegroundColor White " - Done clearing configuration cache."
+    }
 }
 #endregion
