@@ -451,11 +451,11 @@ function Upgrade-ContentDatabases ($spVer)
         ##$Host.UI.RawUI.WindowTitle = "-- Upgrading Content Databases --"
         ##$Host.UI.RawUI.BackgroundColor = "Black"
         Add-PSSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue
+        [array]$contentDatabases = Get-SPContentDatabase | Sort-Object Name
         Write-Host -ForegroundColor White " - Upgrading SharePoint content databases:"
-        [array]$contentDatabases = Get-SPContentDatabase
         foreach ($contentDatabase in $contentDatabases)
         {
-            Write-Host -ForegroundColor White "  - $($contentDatabase.Name)..."
+            Write-Host -ForegroundColor White "  - $($contentDatabase.Name) ($($contentDatabases.IndexOf($contentDatabase)+1) of $($contentDatabases.Count))..."
             $contentDatabase | Upgrade-SPContentDatabase -Confirm:$false -Verbose
             Write-Host -ForegroundColor White "  - Completed upgrading $($contentDatabase.Name)."
         }

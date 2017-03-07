@@ -318,13 +318,25 @@ if ($spVer -eq 15)
 #endregion
 
 #region PSConfig
+# Only upgrade databases if PSConfig is also required to be run
 if (Test-UpgradeRequired -eq $true)
 {
     #region Upgrade Content Databases
-    # Only upgrade databases if PSConfig is also required to be run
-    if (Confirm-LocalSession) # Only upgrade content databases if running on the local (primary) farm server
+    # Get all servers in the farm running the Foundation Web Application service
+    $foundationWebAppServiceInstances = Get-SPServiceInstance | Where-Object {$_.GetType().ToString() -eq "Microsoft.SharePoint.Administration.SPWebServiceInstance" -and $_.Name -ne "WSS_Administration"} # Need to filter out WSS_Administration because the Central Administration service instance shares the same Type as the Foundation Web Application Service
+    # Get the service on the local server
+    $foundationWebAppServiceInstance = $foundationWebAppServiceInstances | Where-Object {$_.Server.Address -eq "$env:COMPUTERNAME"}
+    # See if the service is Online locally, or attempt to do the content DB upgrade if for some reason we can't query the Status of $foundationWebAppServiceInstance.Status
+    if ($foundationWebAppServiceInstance.Status -eq "Online" -or $null -eq $foundationWebAppServiceInstance.Status)
     {
         Write-Host -ForegroundColor Cyan " - The script has determined that content databases may need to be upgraded."
+        [array]$contentDatabases = Get-SPContentDatabase | Sort-Object Name
+        Write-Host -ForegroundColor White " - Content databases found ($($contentDatabases.Count)):"
+        foreach ($contentDatabase in $contentDatabases)
+        {
+            Write-Host -ForegroundColor Cyan "  - $($contentDatabase.Name)"
+        }
+        Write-Host -ForegroundColor White " - If any content databases are in a SQL Availability Group, you can `"Suspend Data Movement`" to speed up the upgrade."
         # Only need to pause if this isn't the only server in the farm
         if ($farmServers.Count -gt 1)
         {
@@ -341,14 +353,21 @@ if (Test-UpgradeRequired -eq $true)
             Start-Process "$($caWebApp.Url)/_admin/DatabaseStatus.aspx" -WindowStyle Minimized
         }
         #endregion
+        $databaseUpgradeAttempted = $true
         Upgrade-ContentDatabases -spVer $spVer
+    }
+    else
+    {
+        Write-Host -ForegroundColor Yellow " - Content databases likely need to be upgraded, but this should be done from a web front-end server."
+        Write-Host -ForegroundColor Yellow " - Please switch to a remote window with a prompt to upgrade content databases, and proceed from there prior to running PSConfig.exe."
+        $databaseUpgradeAttempted = $false
     }
     #endregion
     # Good post for troubleshooting PSConfig: http://itgroove.net/mmman/2015/04/29/how-to-resolve-failures-in-the-sharepoint-product-config-psconfig-tool/
     Write-Host -ForegroundColor Cyan " - The script has determined that PSConfig needs to be run on this server ($env:COMPUTERNAME)."
     Write-Host -ForegroundColor White " - Running: $PSConfig"
-    # Only need to pause if this isn't the only server in the farm
-    if ($farmServers.Count -gt 1)
+    # Only need to pause if this isn't the only server in the farm, and if the DB upgrade hasn't already been attempted
+    if ($farmServers.Count -gt 1 -and (!$databaseUpgradeAttempted))
     {
         Write-Host -ForegroundColor Yellow " - Please ensure that all servers in the farm have completed the binary install phase before proceeding."
         Pause "proceed with farm configuration wizard (PSConfig.exe)" "y"
@@ -356,7 +375,7 @@ if (Test-UpgradeRequired -eq $true)
     # Display a message about no PSConfig progress over remote session
     if (!(Confirm-LocalSession))
     {
-        Write-Host -ForegroundColor White " - Note that while PSConfig is running remotely there will be no progress shown, and may take several minutes to complete."
+        Write-Host -ForegroundColor White " - Note that while PSConfig is running remotely there is no progress shown and it may take several minutes to complete."
         $passThruParameter = @{PassThru = $true}
     }
     else
@@ -366,7 +385,7 @@ if (Test-UpgradeRequired -eq $true)
     $attemptNumber = 1
     Start-Process -FilePath $PSConfig -ArgumentList "-cmd upgrade -inplace b2b -wait -force -cmd applicationcontent -install -cmd installfeatures -cmd secureresources" -NoNewWindow -Wait @passThruParameter
     $PSConfigLastError = Check-PSConfig
-    while (!([string]::IsNullOrEmpty($PSConfigLastError)) -and $attemptNumber -le 4)
+    while (!([string]::IsNullOrEmpty($PSConfigLastError)) -and $attemptNumber -le 1)
     {
         Write-Warning $PSConfigLastError.Line
         Write-Host -ForegroundColor White " - An error occurred running PSConfig, trying again ($attemptNumber)..."
@@ -375,7 +394,7 @@ if (Test-UpgradeRequired -eq $true)
         Start-Process -FilePath $PSConfig -ArgumentList "-cmd upgrade -inplace b2b -wait -force -cmd applicationcontent -install -cmd installfeatures -cmd secureresources" -NoNewWindow -Wait -PassThru
         $PSConfigLastError = Check-PSConfig
     }
-    if ($attemptNumber -ge 5)
+    if ($attemptNumber -ge 2)
     {
         if (Confirm-LocalSession)
         {
