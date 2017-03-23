@@ -221,14 +221,10 @@ foreach ($service in $servicesToStop)
         New-Variable $service"WasRunning" -Value $true
     }
 }
-Write-Host -ForegroundColor White "- Services are now stopped."
+Write-Host -ForegroundColor White " - Services are now stopped."
 #endregion
 
-#region Install Patch Binaries
-InstallUpdatesFromPatchPath -patchPath $patchPath -spVer $spVer
-#endregion
-
-#region Install Remote
+#region Install Remote Patch Binaries
 <#
 Write-Host -ForegroundColor White "-----------------------------------"
 Write-Host -ForegroundColor White "| Automated SP$spYear patch script |"
@@ -266,6 +262,10 @@ else
         Install-Remote -skipParallelInstall $skipParallelInstall -remoteFarmServers $remoteFarmServers -credential $credential -launchPath $launchPath -patchPath $patchPath
     }
 }
+#endregion
+
+#region Install Local Patch Binaries
+InstallUpdatesFromPatchPath -patchPath $patchPath -spVer $spVer
 #endregion
 
 #region Clear Configuration Cache

@@ -26,6 +26,7 @@ function InstallUpdatesFromPatchPath ($patchPath, $spVer)
     # Look for Server Update installers
     if ($updatesToInstall)
     {
+        Write-Host -ForegroundColor White " - Starting local install..."
         # Display warning about missing March 2013 PU only if we are actually installing SP2013 and SP1 isn't already installed and the SP1 installer isn't found
         if ($spYear -eq "2013" -and !($sp2013SP1 -or (CheckFor2013SP1)) -and !$marchPublicUpdate)
         {
@@ -51,7 +52,7 @@ function InstallUpdatesFromPatchPath ($patchPath, $spVer)
                 $null,$oPatchInstallResultCode = $oPatchInstallResultMessage.Line -split "OPatchInstall: Property 'SYS.PROC.RESULT' value '"
                 $oPatchInstallResultCode = $oPatchInstallResultCode.TrimEnd("'")
                 # OPatchInstall: Property 'SYS.PROC.RESULT' value '17028' means the patch was not needed or installed product was newer
-                if ($oPatchInstallResultCode -eq "17028") {Write-Host -ForegroundColor White "   - Patch not required; installed product is same or newer."}
+                if ($oPatchInstallResultCode -eq "17028") {Write-Host -ForegroundColor Yellow "   - Patch not required; installed product is same or newer."}
                 elseif ($oPatchInstallResultCode -eq "17031")
                 {
                     Write-Warning "Error 17031: Detection: Invalid baseline"
