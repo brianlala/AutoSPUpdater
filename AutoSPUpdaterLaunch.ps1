@@ -25,6 +25,9 @@
 .PARAMETER skipParallelInstall
     By default, AutoSPUpdater will install binaries on the local server first, then install binaries on each other server in the farm in parallel. This can significantly speed
     up patch installation. Use the -skipParallelInstall switch if you would instead like to install updates serially, one server at-a-time.
+.PARAMETER useSqlSnapshot
+    By default, AutoSPUpdater will attempt to use a SQL snapshot (only available if the SQL instance(s) are running Enterprise Edition. This can avoid unecessary downtime by pointing
+    end-users to a read-only snapshot copy of the content database while the "real" database is being upgraded. Make sure your SQL server is indeed Enterprise Edition before attempting to use this option.
 .LINK
     https://github.com/brianlala/autospsourcebuilder
     http://blogs.msdn.com/b/russmax/archive/2013/04/01/why-sharepoint-2013-cumulative-update-takes-5-hours-to-install.aspx
@@ -38,7 +41,9 @@ param
     [Parameter(Mandatory=$false)][ValidateNotNullOrEmpty()]
     [string]$remoteAuthPassword,
     [Parameter(Mandatory=$false)][ValidateNotNullOrEmpty()]
-    [Switch]$skipParallelInstall = $false
+    [Switch]$skipParallelInstall = $false,
+    [Parameter(Mandatory=$false)][ValidateNotNullOrEmpty()]
+    [Switch]$useSqlSnapshot = $false
 )
 
 $servicesToStop = ("SPTimerV4","SPSearch4","OSearch14","OSearch15","OSearch16","SPSearchHostController")
@@ -76,7 +81,7 @@ Write-Host -ForegroundColor White " - Loading SharePoint PowerShell Snapin..."
 # Added the line below to match what the SharePoint.ps1 file implements (normally called via the SharePoint Management Shell Start Menu shortcut)
 if (!($Host.Name -eq "ServerRemoteHost")) {$Host.Runspace.ThreadOptions = "ReuseThread"}
 Add-PsSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null
-Import-Module -Name "$launchPath\AutoSPUpdaterModule.psm1" -DisableNameChecking -Global -Force
+Import-Module -Name "$launchPath\AutoSPUpdaterModule.psm1" -DisableNameChecking -Global -Force -ErrorAction Inquire
 If (Confirm-LocalSession)
 {
     Clear-Host
@@ -131,7 +136,7 @@ if ($patchPath -like "*:*" -and $farmServers.Count -gt 1)
 
 if ((Confirm-LocalSession) -and $farmServers.Count -gt 1) # Only do this stuff on the first (local) server, and only if we have other servers in the farm.
 {
-    Write-Host -ForegroundColor White " - Updating $env:COMPUTERNAME first, then additional farm server(s):"
+    Write-Host -ForegroundColor White " - Updating $env:COMPUTERNAME and additional farm server(s):"
     foreach ($farmserver in $farmServers | Where-Object {$_.Name -ne $env:COMPUTERNAME})
     {
         if (Confirm-LocalSession) {Write-Host -ForegroundColor White "  - $($farmserver.Name)"}
@@ -303,9 +308,10 @@ Get-SPProduct -Local
 if (Confirm-LocalSession)
 {
     $caWebApp = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.IsAdministrationWebApplication}
-    Write-Host -ForegroundColor White " - Launching `"$($caWebApp.Url)/_admin/FarmServers.aspx`"..."
+    $caWebAppUrl = ($caWebApp.Url).TrimEnd("/")
+    Write-Host -ForegroundColor White " - Launching `"$caWebAppUrl/_admin/FarmServers.aspx`"..."
     Write-Host -ForegroundColor White " - You can use this to track the status of each server's configuration."
-    Start-Process "$($caWebApp.Url)/_admin/FarmServers.aspx" -WindowStyle Minimized
+    Start-Process "$caWebAppUrl/_admin/FarmServers.aspx" -WindowStyle Minimized
 }
 #endregion
 
@@ -347,10 +353,11 @@ if (Test-UpgradeRequired -eq $true)
         if (Confirm-LocalSession)
         {
             $caWebApp = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.IsAdministrationWebApplication}
-            Write-Host -ForegroundColor White " - Launching `"$($caWebApp.Url)/_admin/DatabaseStatus.aspx`"..."
+            $caWebAppUrl = ($caWebApp.Url).TrimEnd("/")
+            Write-Host -ForegroundColor White " - Launching `"$caWebAppUrl/_admin/DatabaseStatus.aspx`"..."
             Write-Host -ForegroundColor White " - You can use this to track the status of each content database upgrade."
             Start-Sleep -Seconds 3
-            Start-Process "$($caWebApp.Url)/_admin/DatabaseStatus.aspx" -WindowStyle Minimized
+            Start-Process "$caWebAppUrl/_admin/DatabaseStatus.aspx" -WindowStyle Minimized
         }
         #endregion
         $databaseUpgradeAttempted = $true
@@ -452,9 +459,10 @@ $script:isTracing = $false
 if (Confirm-LocalSession)
 {
     $caWebApp = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.IsAdministrationWebApplication}
-    Write-Host -ForegroundColor White " - Launching `"$($caWebApp.Url)/_admin/PatchStatus.aspx`"..."
+    $caWebAppUrl = ($caWebApp.Url).TrimEnd("/")
+    Write-Host -ForegroundColor White " - Launching `"$caWebAppUrl/_admin/PatchStatus.aspx`"..."
     Write-Host -ForegroundColor White " - Review the patch status to ensure everything was applied OK."
-    Start-Process "$($caWebApp.Url)/_admin/PatchStatus.aspx" -WindowStyle Minimized
+    Start-Process "$caWebAppUrl/_admin/PatchStatus.aspx" -WindowStyle Minimized
 }
 #endregion
 

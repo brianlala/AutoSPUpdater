@@ -446,18 +446,26 @@ function Request-SPSearchServiceApplicationStatus ()
         Write-Host -ForegroundColor White " - Done $($actionWord.ToLower()) Search Service Application(s)."
     }
 }
-function Upgrade-ContentDatabases ($spVer)
+function Upgrade-ContentDatabases ($spVer, $useSqlSnapshot)
 {
     $upgradeContentDBScriptBlock = {
         ##$Host.UI.RawUI.WindowTitle = "-- Upgrading Content Databases --"
         ##$Host.UI.RawUI.BackgroundColor = "Black"
+        if ($useSqlSnapshot)
+        {
+            $UseSnapshotParameter = @{UseSnapshot = $true}
+        }
+        else
+        {
+            $UseSnapshotParameter = @{}
+        }
         Add-PSSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue
         [array]$contentDatabases = Get-SPContentDatabase | Sort-Object Name
         Write-Host -ForegroundColor White " - Upgrading SharePoint content databases:"
         foreach ($contentDatabase in $contentDatabases)
         {
             Write-Host -ForegroundColor White "  - $($contentDatabase.Name) ($($contentDatabases.IndexOf($contentDatabase)+1) of $($contentDatabases.Count))..."
-            $contentDatabase | Upgrade-SPContentDatabase -Confirm:$false -Verbose
+            $contentDatabase | Upgrade-SPContentDatabase -Confirm:$false -Verbose @UseSnapshotParameter
             Write-Host -ForegroundColor White "  - Completed upgrading $($contentDatabase.Name)."
         }
     }
