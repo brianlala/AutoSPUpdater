@@ -336,7 +336,8 @@ if (Test-UpgradeRequired -eq $true)
     if ($foundationWebAppServiceInstance.Status -eq "Online" -or $null -eq $foundationWebAppServiceInstance.Status)
     {
         Write-Host -ForegroundColor Cyan " - The script has determined that content databases may need to be upgraded."
-        [array]$contentDatabases = Get-SPContentDatabase | Sort-Object Name
+        # Updated to include all content databases, including ones that are "stopped"
+        [array]$contentDatabases = Get-SPDatabase | Where-Object {$_.WebApplication -ne $null} | Sort-Object Name
         Write-Host -ForegroundColor White " - Content databases found ($($contentDatabases.Count)):"
         foreach ($contentDatabase in $contentDatabases)
         {

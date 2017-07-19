@@ -22,7 +22,7 @@ function InstallUpdatesFromPatchPath ($patchPath, $spVer)
                                   "17044" = "Installer was unable to run detection for this package"}
 
     # Get all CUs and PUs
-    $updatesToInstall = Get-ChildItem -Path "$patchPath" -Include office2010*.exe,ubersrv*.exe,ubersts*.exe,*pjsrv*.exe,sharepointsp2013*.exe,coreserver201*.exe,sts201*.exe,wssloc201*.exe,svrproofloc201*.exe -Recurse -ErrorAction SilentlyContinue | Sort-Object -Descending
+    $updatesToInstall = Get-ChildItem -Path "$patchPath" -Include office2010*.exe,ubersrv*.exe,ubersts*.exe,*pjsrv*.exe,sharepointsp2013*.exe,coreserver201*.exe,sts201*.exe,wssloc201*.exe,svrproofloc201*.exe,oserver*.exe -Recurse -ErrorAction SilentlyContinue | Sort-Object -Descending
     # Look for Server Update installers
     if ($updatesToInstall)
     {
@@ -241,7 +241,7 @@ function Enable-RemoteSession ($server, $password, $launchPath)
     }
     Write-Host -ForegroundColor White " - Updating PowerShell execution policy on `"$server`" via PsExec..."
     Start-Process -FilePath "$psExec" `
-                  -ArgumentList "/acceptEula \\$server -h powershell.exe -Command `"Set-ExecutionPolicy Bypass -Force ; Stop-Process -Id `$PID`"" `
+                  -ArgumentList "/acceptEula \\$server -h powershell.exe -Command `"try {Set-ExecutionPolicy Bypass -Force} catch {}; Stop-Process -Id `$PID`"" `
                   -Wait -NoNewWindow
     # Another way to exit powershell when running over PsExec from http://www.leeholmes.com/blog/2007/10/02/using-powershell-and-PsExec-to-invoke-expressions-on-remote-computers/
     # PsExec \\server cmd /c "echo . | powershell {command}"
@@ -460,7 +460,8 @@ function Upgrade-ContentDatabases ($spVer, $useSqlSnapshot)
             $UseSnapshotParameter = @{}
         }
         Add-PSSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue
-        [array]$contentDatabases = Get-SPContentDatabase | Sort-Object Name
+        # Updated to include all content databases, including ones that are "stopped"
+        [array]$contentDatabases = Get-SPDatabase | Where-Object {$_.WebApplication -ne $null} | Sort-Object Name
         Write-Host -ForegroundColor White " - Upgrading SharePoint content databases:"
         foreach ($contentDatabase in $contentDatabases)
         {
