@@ -5,8 +5,8 @@
     Consisting of a module and a "launcher" script, AutoSPUpdater will install SharePoint 201x updates in two phases: binary installation and PSConfig (AKA
     the command-line equivalent of the "Products and Technologies Configuration Wizard"). AutoSPUpdater leverages PowerShell remoting and will test connectivity
     to other servers in the farm (automatically detected using Get-SPFarm) via ping, so this must be allowed through Windows Firewall. The script will prompt when
-    the binary installation has completed on each server prior to running PSConfig. The script will also pause the SharePoint 2013 Search Service Application to 
-    speed up patching (only required on SP2013). For best results, run the script from a UNC/shared path (NOT a mapped drive) e.g. "\\server\share$\SP\Scripts". 
+    the binary installation has completed on each server prior to running PSConfig. The script will also pause the SharePoint 2013 Search Service Application to
+    speed up patching (only required on SP2013). For best results, run the script from a UNC/shared path (NOT a mapped drive) e.g. "\\server\share$\SP\Scripts".
     You can also run this from a regular local path but ONLY if the script and update files exist identically on each server in the farm. Currently, Azure file shares
     (e.g. *.file.core.windows.net) don't work as UNC sources, probably due to the way authentication is implemented. In general, you should make sure that all
     servers in your farm have connectivity and access to the path you run this script from.
@@ -20,7 +20,7 @@
     detected version of SharePoint). If this relative path doesn’t exist, the script will look in the “default” path used by AutoSPInstaller and AutoSPSourceBuilder – C:\SP\201x\Updates.
     Otherwise, you can just specify another path.
 .PARAMETER remoteAuthPassword
-    Optionally provide (in clear text, yikes) the password of the currently-logged in user for use in remote authentication to the other servers in the farm. If omitted, 
+    Optionally provide (in clear text, yikes) the password of the currently-logged in user for use in remote authentication to the other servers in the farm. If omitted,
     the script will prompt you for it (in this case it will be obfuscated and encrypted). This parameter is only provided for maximum automation; normally it's best to leave it out.
 .PARAMETER skipParallelInstall
     By default, AutoSPUpdater will install binaries on the local server first, then install binaries on each other server in the farm in parallel. This can significantly speed
@@ -34,6 +34,8 @@
 .NOTES
     Created & maintained by Brian Lalancette (@brianlala), 2012-2017.
 #>
+[CmdletBinding()]
+
 param
 (
     [Parameter(Mandatory=$false)][ValidateNotNullOrEmpty()]
@@ -45,6 +47,15 @@ param
     [Parameter(Mandatory=$false)][ValidateNotNullOrEmpty()]
     [Switch]$useSqlSnapshot = $false
 )
+
+if ($VerbosePreference -eq "Continue")
+{
+    $verboseParameter = @{Verbose = $true}
+}
+else
+{
+        $verboseParameter = @{}
+}
 
 $servicesToStop = ("SPTimerV4","SPSearch4","OSearch14","OSearch15","OSearch16","SPSearchHostController")
 # Same set of services, just in a slightly different order
@@ -60,9 +71,6 @@ If (!([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]
 #endregion
 
 #region Set Up Paths & Environment
-
-$Host.UI.RawUI.WindowTitle = "-- $env:COMPUTERNAME (AutoSPUpdater) --"
-$Host.UI.RawUI.BackgroundColor = "Black"
 $0 = $myInvocation.MyCommand.Definition
 $launchPath = [System.IO.Path]::GetDirectoryName($0)
 $bits = Get-Item $launchPath | Split-Path -Parent
@@ -84,10 +92,18 @@ Add-PsSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out
 Import-Module -Name "$launchPath\AutoSPUpdaterModule.psm1" -DisableNameChecking -Global -Force -ErrorAction Inquire
 If (Confirm-LocalSession)
 {
+    $remoteWindowTitleString = "Local"
+    Start-Sleep -Seconds 1
     Clear-Host
     if (!$startDate) {$startDate = Get-Date}
     StartTracing # Only start tracing if this is a local session
 }
+else
+{
+    $remoteWindowTitleString = "Remote"
+}
+$Host.UI.RawUI.WindowTitle = "-- $env:COMPUTERNAME ($remoteWindowTitleString AutoSPUpdater) --"
+$Host.UI.RawUI.BackgroundColor = "Black"
 $spYears = @{"14" = "2010"; "15" = "2013"; "16" = "2016"}
 $spVersions = @{"2010" = "14"; "2013" = "15"; "2016" = "16"}
 if ($null -eq $spVer)
@@ -116,14 +132,14 @@ if (!(Test-Path -Path $patchPath -ErrorAction SilentlyContinue))
         throw "Patch path `"$patchPath`" does not appear to be valid."
     }
 }
-Write-Host -ForegroundColor White " - `$patchPath is: $patchPath"
+Write-Verbose -Message "`$patchPath is: $patchPath"
 $PSConfig = "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$spVer\BIN\psconfig.exe"
 $PSConfigUI = "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$spVer\BIN\psconfigui.exe"
 
 UnblockFiles -path $patchPath
 #endregion
 
-#region Get Farm Servers & Credentials 
+#region Get Farm Servers & Credentials
 [array]$farmServers = (Get-SPFarm).Servers | Where-Object {$_.Role -ne "Invalid"}
 if ($patchPath -like "*:*" -and $farmServers.Count -gt 1)
 {
@@ -209,7 +225,7 @@ foreach ($avPath in $avPaths)
 # Only need to pause the Search Service Application(s) if running SharePoint 2013 and only attempt on the first (local) server in the farm
 if ($spVer -eq 15 -and (Confirm-LocalSession))
 {
-    Request-SPSearchServiceApplicationStatus -desiredStatus Paused
+    Request-SPSearchServiceApplicationStatus -desiredStatus Paused @verboseParameter
 }
 #endregion
 
@@ -243,10 +259,15 @@ if ($farmservers | Where-Object {$_ -match $env:COMPUTERNAME}) # Had to do it th
     try
     {
         # We only want to Install-Remote if we aren't already *in* a remote session, and if there are actually remote servers to install!
-        if ((Confirm-LocalSession) -and !([string]::IsNullOrEmpty($remoteFarmServers))) {Install-Remote -skipParallelInstall $skipParallelInstall -remoteFarmServers $remoteFarmServers -credential $credential -launchPath $launchPath -patchPath $patchPath}
+        if ((Confirm-LocalSession) -and !([string]::IsNullOrEmpty($remoteFarmServers)))
+        {
+            Write-Verbose -Message "Kicking off remote installs..."
+            Install-Remote -skipParallelInstall:$skipParallelInstall -remoteFarmServers $remoteFarmServers -credential $credential -launchPath $launchPath -patchPath $patchPath @verboseParameter
+        }
     }
     catch
     {
+        Write-Debug $_.Exception.Message
         $EndDate = Get-Date
         Write-Host -ForegroundColor White "-----------------------------------"
         Write-Host -ForegroundColor White "| Automated SP$spYear patching script |"
@@ -264,13 +285,13 @@ else
 {
     if (Confirm-LocalSession)
     {
-        Install-Remote -skipParallelInstall $skipParallelInstall -remoteFarmServers $remoteFarmServers -credential $credential -launchPath $launchPath -patchPath $patchPath
+        Install-Remote -skipParallelInstall $skipParallelInstall -remoteFarmServers $remoteFarmServers -credential $credential -launchPath $launchPath -patchPath $patchPath @verboseParameter
     }
 }
 #endregion
 
 #region Install Local Patch Binaries
-InstallUpdatesFromPatchPath -patchPath $patchPath -spVer $spVer
+InstallUpdatesFromPatchPath -patchPath $patchPath -spVer $spVer @verboseParameter
 #endregion
 
 #region Clear Configuration Cache
@@ -296,7 +317,7 @@ ForEach ($service in $servicesToStart)
         Start-Service -Name $service
     }
 }
-Write-Host -ForegroundColor White " - Services are now started." 
+Write-Host -ForegroundColor White " - Services are now started."
 #endregion
 
 #region Get-SPProduct
@@ -331,6 +352,7 @@ if (Test-UpgradeRequired -eq $true)
     # Get all servers in the farm running the Foundation Web Application service
     $foundationWebAppServiceInstances = Get-SPServiceInstance | Where-Object {$_.GetType().ToString() -eq "Microsoft.SharePoint.Administration.SPWebServiceInstance" -and $_.Name -ne "WSS_Administration"} # Need to filter out WSS_Administration because the Central Administration service instance shares the same Type as the Foundation Web Application Service
     # Get the service on the local server
+    Write-Verbose -Message "Checking status of local Foundation Web Application service..."
     $foundationWebAppServiceInstance = $foundationWebAppServiceInstances | Where-Object {$_.Server.Address -eq "$env:COMPUTERNAME"}
     # See if the service is Online locally, or attempt to do the content DB upgrade if for some reason we can't query the Status of $foundationWebAppServiceInstance.Status
     if ($foundationWebAppServiceInstance.Status -eq "Online" -or $null -eq $foundationWebAppServiceInstance.Status)
@@ -362,7 +384,7 @@ if (Test-UpgradeRequired -eq $true)
         }
         #endregion
         $databaseUpgradeAttempted = $true
-        Upgrade-ContentDatabases -spVer $spVer
+        Upgrade-ContentDatabases -spVer $spVer @verboseParameter
     }
     else
     {
@@ -442,9 +464,9 @@ foreach ($avPath in $avPaths)
 }
 #endregion
 
-#region Completed
-Write-Host -ForegroundColor White " - Completed!`a"
-$Host.UI.RawUI.WindowTitle = "-- Completed ($env:COMPUTERNAME) --"
+#region Done
+Write-Host -ForegroundColor White " - Done!`a"
+$Host.UI.RawUI.WindowTitle = "-- Done ($remoteWindowTitleString - $env:COMPUTERNAME) --"
 $EndDate = Get-Date
 try
 {
@@ -453,7 +475,7 @@ try
 }
 catch
 {}
-$script:isTracing = $false
+$global:isTracing = $false
 #endregion
 
 #region Launch Central Admin - Patch Status
@@ -477,14 +499,17 @@ If (!$aborted)
         Write-Host -ForegroundColor White "| Started on: $startDate |"
         Write-Host -ForegroundColor White "| Completed:  $EndDate |"
         Write-Host -ForegroundColor White "-----------------------------------"
-        try
+        if ($isTracing)
         {
-            Stop-Transcript -ErrorAction SilentlyContinue
-            if (!$?) {throw}
+            try
+            {
+                Stop-Transcript -ErrorAction SilentlyContinue
+                if (!$?) {throw}
+            }
+            catch
+            {}
+            $global:isTracing = $false
         }
-        catch
-        {}
-        $script:isTracing = $false
     }
     # Remove any lingering LogTime values in the registry
     Remove-ItemProperty -Path "HKLM:\SOFTWARE\AutoSPUpdater\" -Name "LogTime" -ErrorAction SilentlyContinue
