@@ -9,6 +9,8 @@ function InstallUpdatesFromPatchPath
         [Parameter(Mandatory=$false)][ValidateNotNullOrEmpty()]
         [string]$spVer
     )
+    $spYears = @{"14" = "2010"; "15" = "2013"; "16" = "2016"}
+    $spYear = $spYears.$spVer
     Write-Host -ForegroundColor White " - Looking for SharePoint updates to install in $patchPath..."
     # Result codes below are from http://technet.microsoft.com/en-us/library/cc179058(v=office.14).aspx
     $oPatchInstallResultCodes = @{"17301" = "Error: General Detection error";
@@ -35,11 +37,14 @@ function InstallUpdatesFromPatchPath
     if ($updatesToInstall)
     {
         Write-Host -ForegroundColor White " - Starting local install..."
+        <#
         # Display warning about missing March 2013 PU only if we are actually installing SP2013 and SP1 isn't already installed and the SP1 installer isn't found
+        $sp2013SP1 = Get-ChildItem -Path "$bits\$spYear\Updates" -Name -Include "officeserversp2013-kb2880552-fullfile-x64-en-us.exe" -Recurse -ErrorAction SilentlyContinue
         if ($spYear -eq "2013" -and !($sp2013SP1 -or (CheckFor2013SP1)) -and !$marchPublicUpdate)
         {
             Write-Host -ForegroundColor Yellow "  - Note: the March 2013 PU package wasn't found in ..\$spYear\Updates; it may need to be installed first if it wasn't slipstreamed."
         }
+        #>
         # Now attempt to install any other CUs found in the \Updates folder
         Write-Host -ForegroundColor White "  - Installing SharePoint Updates on " -NoNewline
         Write-Host -ForegroundColor Black -BackgroundColor Yellow "$env:COMPUTERNAME"
@@ -53,7 +58,7 @@ function InstallUpdatesFromPatchPath
             Start-Process -FilePath "$updateToInstall" -ArgumentList "/passive /norestart" -LoadUserProfile
             Show-Progress -Process $($splitUpdate -replace ".exe", "") -Color Cyan -Interval 5
             $delta,$null = (New-TimeSpan -Start $startTime -End (Get-Date)).ToString() -split "\."
-            $oPatchInstallLog = Get-ChildItem -Path (Get-Item $env:TEMP).FullName | ? {$_.Name -like "opatchinstall*.log"} | Sort-Object -Descending -Property "LastWriteTime" | Select-Object -first 1
+            $oPatchInstallLog = Get-ChildItem -Path (Get-Item $env:TEMP).FullName | Where-Object {$_.Name -like "opatchinstall*.log"} | Sort-Object -Descending -Property "LastWriteTime" | Select-Object -first 1
             # Get install result from log
             $oPatchInstallResultMessage = $oPatchInstallLog | Select-String -SimpleMatch -Pattern "OPatchInstall: Property 'SYS.PROC.RESULT' value" | Select-Object -Last 1
             If (!($oPatchInstallResultMessage -like "*value '0'*")) # Anything other than 0 means unsuccessful but that's not necessarily a bad thing
@@ -113,8 +118,6 @@ function Install-Remote
     }
 
     if (!$RemoteStartDate) {$RemoteStartDate = Get-Date}
-    $spYears = @{"14" = "2010"; "15" = "2013"; "16" = "2016"}
-    $spVersions = @{"2010" = "14"; "2013" = "15"; "2016" = "16"}
     if ($null -eq $spVer)
     {
         [string]$spVer = (Get-SPFarm).BuildVersion.Major
@@ -124,12 +127,6 @@ function Install-Remote
             throw "Could not determine version of farm."
         }
     }
-    $spYear = $spYears.$spVer
-<#  Write-Host -ForegroundColor Green "-----------------------------------"
-    Write-Host -ForegroundColor Green "| Automated SP$spYear Patch Install |"
-    Write-Host -ForegroundColor Green "| Started on: $RemoteStartDate |"
-    Write-Host -ForegroundColor Green "-----------------------------------"
-#>
     Write-Host -ForegroundColor White " - Starting remote installs..."
     Enable-CredSSP $remoteFarmServers
     foreach ($server in $remoteFarmServers)
@@ -147,8 +144,8 @@ function Install-Remote
                                                                             Import-Module -Name `"$launchPath\AutoSPUpdaterModule.psm1`" -DisableNameChecking -Global -Force `
                                                                             StartTracing -Server $server; `
                                                                             Test-ServerConnection -Server $server; `
-                                                                            Enable-RemoteSession -Server $server -Password $(ConvertFrom-SecureString $($credential.Password)) -launchPath $launchPath; `
-                                                                            Start-RemoteUpdate -Server $server -Password $(ConvertFrom-SecureString $($credential.Password)) -launchPath $launchPath -patchPath $patchPath -spVer $spver $verboseSwitch; `
+                                                                            Enable-RemoteSession -Server $server -plainPass $(ConvertFrom-SecureString $($credential.Password)) -launchPath $launchPath; `
+                                                                            Start-RemoteUpdate -Server $server -plainPass $(ConvertFrom-SecureString $($credential.Password)) -launchPath $launchPath -patchPath $patchPath -spVer $spver $verboseSwitch; `
                                                                             Pause `"exit`"; `
                                                                             Stop-Transcript -ErrorAction SilentlyContinue}" -Verb Runas
             Start-Sleep 10
@@ -169,11 +166,11 @@ function Start-RemoteUpdate
     [CmdletBinding()]
     param
     (
-        $server,
-        $password,
-        $launchPath,
-        $patchPath,
-        $spVer
+        [String]$server,
+        [String]$plainPass,
+        [String]$launchPath,
+        [String]$patchPath,
+        [String]$spVer
     )
     if ($VerbosePreference -eq "Continue")
     {
@@ -183,16 +180,13 @@ function Start-RemoteUpdate
     {
         $verboseParameter = @{}
     }
-    If ($password) {$credential = New-Object System.Management.Automation.PsCredential $env:USERDOMAIN\$env:USERNAME,$(ConvertTo-SecureString $password)}
+    If ($plainPass) {$credential = New-Object System.Management.Automation.PsCredential $env:USERDOMAIN\$env:USERNAME,$(ConvertTo-SecureString $plainPass)}
     If (!$credential) {$credential = $host.ui.PromptForCredential("AutoSPInstaller - Remote Install", "Re-Enter Credentials for Remote Authentication:", "$env:USERDOMAIN\$env:USERNAME", "NetBiosUserName")}
     If ($session.Name -ne "AutoSPUpdaterSession-$server")
     {
         Write-Host -ForegroundColor White " - Starting remote session to $server..."
         $session = New-PSSession -Name "AutoSPUpdaterSession-$server" -Authentication Credssp -Credential $credential -ComputerName $server
     }
-    # Create a hash table with major version to product year mappings
-    $spYears = @{"14" = "2010"; "15" = "2013"; "16" = "2016"}
-    $spYear = $spYears.$spVer
     # Set some remote variables that we will need...
     Invoke-Command -ScriptBlock {param ($value) Set-Variable -Name launchPath -Value $value} -ArgumentList $launchPath -Session $session
     Invoke-Command -ScriptBlock {param ($value) Set-Variable -Name spVer -Value $value} -ArgumentList $spVer -Session $session
@@ -235,7 +229,7 @@ function Import-SharePointPowerShell
 {
     [CmdletBinding()]
     param ()
-    if ($null -eq (Get-PsSnapin |?{$_.Name -eq "Microsoft.SharePoint.PowerShell"}))
+    if ($null -eq (Get-PsSnapin | Where-Object {$_.Name -eq "Microsoft.SharePoint.PowerShell"}))
     {
         Write-Host -ForegroundColor White " - (Re-)Loading SharePoint PowerShell Snapin..."
         # Added the line below to match what the SharePoint.ps1 file implements (normally called via the SharePoint Management Shell Start Menu shortcut)
@@ -273,19 +267,27 @@ function Test-ServerConnection
     Write-Verbose -Message "Running `"Test-Connection -ComputerName $server -Count 1 -Quiet`""
     Write-Host -ForegroundColor White " - Testing connection (via Ping) to `"$server`"..." -NoNewline
     $canConnect = Test-Connection -ComputerName $server -Count 1 -Quiet
-    If ($canConnect) {Write-Host -ForegroundColor Cyan -BackgroundColor Black $($canConnect.ToString() -replace "True","Success.")}
-    If (!$canConnect)
+    if ($canConnect) {Write-Host -ForegroundColor Cyan -BackgroundColor Black $($canConnect.ToString() -replace "True","Success.")}
+    if (!$canConnect)
     {
         Write-Host -ForegroundColor Yellow -BackgroundColor Black $($canConnect.ToString() -replace "False","Failed.")
         Write-Host -ForegroundColor Yellow " - Check that `"$server`":"
         Write-Host -ForegroundColor Yellow "  - Is online"
         Write-Host -ForegroundColor Yellow "  - Has the required Windows Firewall exceptions set (or turned off)"
         Write-Host -ForegroundColor Yellow "  - Has a valid DNS entry for $server.$($env:USERDNSDOMAIN)"
+        throw "Ping connectivity test failed for `"$server`""
     }
 }
-function Enable-RemoteSession ($server, $password, $launchPath)
+function Enable-RemoteSession
 {
-    If ($password) {$credential = New-Object System.Management.Automation.PsCredential $env:USERDOMAIN\$env:USERNAME,$(ConvertTo-SecureString $password)}
+    [CmdletBinding()]
+    param
+    (
+        [String]$server,
+        [String]$plainPass,
+        [String]$launchPath
+    )
+    If ($plainPass) {$credential = New-Object System.Management.Automation.PsCredential $env:USERDOMAIN\$env:USERNAME,$(ConvertTo-SecureString $plainPass)}
     If (!$credential) {$credential = $host.ui.PromptForCredential("AutoSPUpdater - Remote Install", "Re-Enter Credentials for Remote Authentication:", "$env:USERDOMAIN\$env:USERNAME", "NetBiosUserName")}
     $username = $credential.Username
     $password = ConvertTo-PlainText $credential.Password
@@ -298,7 +300,6 @@ function Enable-RemoteSession ($server, $password, $launchPath)
         Import-Module BitsTransfer | Out-Null
         Start-BitsTransfer -Source $psExecUrl -Destination $psExec -DisplayName "Downloading Sysinternals PsExec..." -Priority Foreground -Description "From $psExecUrl..." -ErrorVariable err
         If ($err) {Write-Warning "Could not download PsExec!"; Pause "exit"; break}
-        $sourceFile = $destinationFile
     }
     Write-Host -ForegroundColor White " - Updating PowerShell execution policy on `"$server`" via PsExec..."
     Start-Process -FilePath "$psExec" `
@@ -320,12 +321,9 @@ function StartTracing
     )
     if (!$isTracing)
     {
-        # Look for an existing log file start time in the registry so we can re-use the same log file
-        $regKey = Get-Item -Path "HKLM:\SOFTWARE\AutoSPUpdater\" -ErrorAction SilentlyContinue
-        If ($regKey) {$script:Logtime = $regkey.GetValue("LogTime")}
         If ([string]::IsNullOrEmpty($logtime)) {$script:Logtime = Get-Date -Format yyyy-MM-dd_h-mm}
-        If ($server) {$script:LogFile = "$env:USERPROFILE\Desktop\AutoSPUpdater-$server-$script:Logtime.rtf"}
-        else {$script:LogFile = "$env:USERPROFILE\Desktop\AutoSPUpdater-$script:Logtime.rtf"}
+        If ($server) {$script:LogFile = Join-Path -Path $([Environment]::GetFolderPath("Desktop")) -ChildPath "\AutoSPUpdater-$server-$script:Logtime.rtf"}
+        else {$script:LogFile = Join-Path -Path $([Environment]::GetFolderPath("Desktop")) -ChildPath "\AutoSPUpdater-$script:Logtime.rtf"}
         Start-Transcript -Path $logFile -Append -Force
         If ($?) {$global:isTracing = $true}
     }
@@ -410,12 +408,12 @@ Function Test-UpgradeRequired
         Return $false
     }
 }
-function Check-PSConfig
+function Test-PSConfig
 {
     [CmdletBinding()]
     param ()
     $PSConfigLogLocation = $((Get-SPDiagnosticConfig).LogLocation) -replace "%CommonProgramFiles%","$env:CommonProgramFiles"
-    $PSConfigLog = Get-ChildItem -Path $PSConfigLogLocation | ? {$_.Name -like "PSCDiagnostics*"} | Sort-Object -Descending -Property "LastWriteTime" | Select-Object -first 1
+    $PSConfigLog = Get-ChildItem -Path $PSConfigLogLocation | Where-Object {$_.Name -like "PSCDiagnostics*"} | Sort-Object -Descending -Property "LastWriteTime" | Select-Object -first 1
     If ($PSConfigLog -eq $null)
     {
         Throw " - Could not find PSConfig log file!"
@@ -437,24 +435,16 @@ function Request-SPSearchServiceApplicationStatus
         [String]$desiredStatus
     )
 
-# From https://technet.microsoft.com/en-ca/library/dn745901.aspx
-<#
+    # From https://technet.microsoft.com/en-ca/library/dn745901.aspx
+    <#
 ($ssa.IsPaused() -band 0x01) -ne 0 #A change in the number of crawl components or crawl databases is in progress.
-
 ($ssa.IsPaused() -band 0x02) -ne 0 #A backup or restore procedure is in progress.
-
 ($ssa.IsPaused() -band 0x04) -ne 0 #A backup of the Volume Shadow Copy Service (VSS) is in progress.
-
 ($ssa.IsPaused() -band 0x08) -ne 0 #One or more servers in the search topology that host query components are offline.
-
 ($ssa.IsPaused() -band 0x20) -ne 0 #One or more crawl databases in the search topology are being rebalanced.
-
 ($ssa.IsPaused() -band 0x40) -ne 0 #One or more link databases in the search topology are being rebalanced.
-
 ($ssa.IsPaused() -band 0x80) -ne 0 #An administrator has manually paused the Search service application.
-
 ($ssa.IsPaused() -band 0x100) -ne 0 #The search index is being deleted.
-
 ($ssa.IsPaused() -band 0x200) -ne 0 #The search index is being repartitioned.
 #>
     [array]$farmServers = (Get-SPFarm).Servers | Where-Object {$_.Role -ne "Invalid"}
@@ -516,7 +506,7 @@ function Request-SPSearchServiceApplicationStatus
         Write-Host -ForegroundColor White " - Done $($actionWord.ToLower()) Search Service Application(s)."
     }
 }
-function Upgrade-ContentDatabases
+function Update-ContentDatabases
 {
     [CmdletBinding()]
     param

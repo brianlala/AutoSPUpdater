@@ -26,7 +26,7 @@
     By default, AutoSPUpdater will install binaries on the local server first, then install binaries on each other server in the farm in parallel. This can significantly speed
     up patch installation. Use the -skipParallelInstall switch if you would instead like to install updates serially, one server at-a-time.
 .PARAMETER useSqlSnapshot
-    By default, AutoSPUpdater will attempt to use a SQL snapshot (only available if the SQL instance(s) are running Enterprise Edition. This can avoid unecessary downtime by pointing
+    AutoSPUpdater can attempt to use a SQL snapshot (only available if the SQL instance(s) are running Enterprise Edition) when upgrading content databases. This can avoid unecessary downtime by pointing
     end-users to a read-only snapshot copy of the content database while the "real" database is being upgraded. Make sure your SQL server is indeed Enterprise Edition before attempting to use this option.
 .LINK
     https://github.com/brianlala/autospsourcebuilder
@@ -41,7 +41,7 @@ param
     [Parameter(Mandatory=$false)][ValidateNotNullOrEmpty()]
     [string]$patchPath,
     [Parameter(Mandatory=$false)][ValidateNotNullOrEmpty()]
-    [string]$remoteAuthPassword,
+    [String]$remoteAuthPassword,
     [Parameter(Mandatory=$false)][ValidateNotNullOrEmpty()]
     [Switch]$skipParallelInstall = $false,
     [Parameter(Mandatory=$false)][ValidateNotNullOrEmpty()]
@@ -105,7 +105,6 @@ else
 $Host.UI.RawUI.WindowTitle = "-- $env:COMPUTERNAME ($remoteWindowTitleString AutoSPUpdater) --"
 $Host.UI.RawUI.BackgroundColor = "Black"
 $spYears = @{"14" = "2010"; "15" = "2013"; "16" = "2016"}
-$spVersions = @{"2010" = "14"; "2013" = "15"; "2016" = "16"}
 if ($null -eq $spVer)
 {
     [string]$spVer = (Get-SPFarm).BuildVersion.Major
@@ -239,7 +238,7 @@ foreach ($service in $servicesToStop)
         Write-Host -ForegroundColor White "  - Stopping service $((Get-Service -Name $service).DisplayName)..."
         Set-Service -Name $service -StartupType Disabled
         Stop-Service -Name $service -Force
-        New-Variable $service"WasRunning" -Value $true
+        New-Variable -Name $service"WasRunning" -Value $true
     }
 }
 Write-Host -ForegroundColor White " - Services are now stopped."
@@ -328,7 +327,7 @@ Get-SPProduct -Local
 #region Launch Central Admin - Servers In Farm
 if (Confirm-LocalSession)
 {
-    $caWebApp = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.IsAdministrationWebApplication}
+    $caWebApp = Get-SPWebApplication -IncludeCentralAdministration | Where-Object {$_.IsAdministrationWebApplication}
     $caWebAppUrl = ($caWebApp.Url).TrimEnd("/")
     Write-Host -ForegroundColor White " - Launching `"$caWebAppUrl/_admin/FarmServers.aspx`"..."
     Write-Host -ForegroundColor White " - You can use this to track the status of each server's configuration."
@@ -375,7 +374,7 @@ if (Test-UpgradeRequired -eq $true)
         #region Launch Central Admin - Database Status
         if (Confirm-LocalSession)
         {
-            $caWebApp = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.IsAdministrationWebApplication}
+            $caWebApp = Get-SPWebApplication -IncludeCentralAdministration | Where-Object {$_.IsAdministrationWebApplication}
             $caWebAppUrl = ($caWebApp.Url).TrimEnd("/")
             Write-Host -ForegroundColor White " - Launching `"$caWebAppUrl/_admin/DatabaseStatus.aspx`"..."
             Write-Host -ForegroundColor White " - You can use this to track the status of each content database upgrade."
@@ -384,7 +383,7 @@ if (Test-UpgradeRequired -eq $true)
         }
         #endregion
         $databaseUpgradeAttempted = $true
-        Upgrade-ContentDatabases -spVer $spVer @verboseParameter
+        Update-ContentDatabases -spVer $spVer @verboseParameter
     }
     else
     {
@@ -414,7 +413,7 @@ if (Test-UpgradeRequired -eq $true)
     }
     $attemptNumber = 1
     Start-Process -FilePath $PSConfig -ArgumentList "-cmd upgrade -inplace b2b -wait -force -cmd applicationcontent -install -cmd installfeatures -cmd secureresources" -NoNewWindow -Wait @passThruParameter
-    $PSConfigLastError = Check-PSConfig
+    $PSConfigLastError = Test-PSConfig
     while (!([string]::IsNullOrEmpty($PSConfigLastError)) -and $attemptNumber -le 1)
     {
         Write-Warning $PSConfigLastError.Line
@@ -422,9 +421,10 @@ if (Test-UpgradeRequired -eq $true)
         Start-Sleep -Seconds 5
         $attemptNumber += 1
         Start-Process -FilePath $PSConfig -ArgumentList "-cmd upgrade -inplace b2b -wait -force -cmd applicationcontent -install -cmd installfeatures -cmd secureresources" -NoNewWindow -Wait -PassThru
-        $PSConfigLastError = Check-PSConfig
+        $PSConfigLastError = Test-PSConfig
     }
-    if ($attemptNumber -ge 2)
+    # If we've attempted 2 times and we're still getting an error with PSConfig, launch the GUI
+    if ($attemptNumber -ge 2 -and !([string]::IsNullOrEmpty($PSConfigLastError)))
     {
         if (Confirm-LocalSession)
         {
@@ -481,7 +481,7 @@ $global:isTracing = $false
 #region Launch Central Admin - Patch Status
 if (Confirm-LocalSession)
 {
-    $caWebApp = Get-SPWebApplication -IncludeCentralAdministration | ? {$_.IsAdministrationWebApplication}
+    $caWebApp = Get-SPWebApplication -IncludeCentralAdministration | Where-Object {$_.IsAdministrationWebApplication}
     $caWebAppUrl = ($caWebApp.Url).TrimEnd("/")
     Write-Host -ForegroundColor White " - Launching `"$caWebAppUrl/_admin/PatchStatus.aspx`"..."
     Write-Host -ForegroundColor White " - Review the patch status to ensure everything was applied OK."
