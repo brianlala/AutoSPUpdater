@@ -140,9 +140,10 @@ UnblockFiles -path $patchPath
 
 #region Get Farm Servers & Credentials
 [array]$farmServers = (Get-SPFarm).Servers | Where-Object {$_.Role -ne "Invalid"}
-if ($patchPath -like "*:*" -and $farmServers.Count -gt 1)
+if (($patchPath -like "*:*" -or $launchPath -like "*:*") -and $farmServers.Count -gt 1)
 {
-    Write-Host -ForegroundColor Yellow " - The path where updates reside ($patchPath) is identified by a local drive letter."
+    Write-Host -ForegroundColor Yellow " - The path where updates reside ($patchPath) and/or where the script"
+    Write-Host -ForegroundColor Yellow " - is being run from ($launchPath) is/are identified by a local drive letter."
     Write-Host -ForegroundColor Yellow " - You should either use a UNC path that all farm servers can access (recommended),"
     Write-Host -ForegroundColor Yellow " - or create identical paths and copy all required files on each farm server."
     Write-Host -ForegroundColor White " - Ctrl-C to exit, or"

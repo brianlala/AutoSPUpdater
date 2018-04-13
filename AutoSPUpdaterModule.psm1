@@ -47,7 +47,7 @@ function InstallUpdatesFromPatchPath
         #>
         # Now attempt to install any other CUs found in the \Updates folder
         Write-Host -ForegroundColor White "  - Installing SharePoint Updates on " -NoNewline
-        Write-Host -ForegroundColor Black -BackgroundColor Yellow "$env:COMPUTERNAME"
+        Write-Host -ForegroundColor Black -BackgroundColor Green "$env:COMPUTERNAME"
         ForEach ($updateToInstall in $updatesToInstall)
         {
             # Get the file name only, in case $updateToInstall includes part of a path (e.g. is in a subfolder)
@@ -89,7 +89,7 @@ function InstallUpdatesFromPatchPath
         Write-Host -ForegroundColor White "  - Update installation complete."
     }
     Write-Host -ForegroundColor White " - Finished installing SharePoint updates on " -NoNewline
-    Write-Host -ForegroundColor Black -BackgroundColor Yellow "$env:COMPUTERNAME"
+    Write-Host -ForegroundColor Black -BackgroundColor Green "$env:COMPUTERNAME"
     WriteLine
 }
 #endregion
@@ -448,7 +448,7 @@ function Request-SPSearchServiceApplicationStatus
 ($ssa.IsPaused() -band 0x200) -ne 0 #The search index is being repartitioned.
 #>
     [array]$farmServers = (Get-SPFarm).Servers | Where-Object {$_.Role -ne "Invalid"}
-    Write-Verbose -Message "$($farmservers.Count) farm servers detected."
+    Write-Verbose -Message "$($farmservers.Count) farm server(s) detected."
 
     switch ($desiredStatus)
     {
