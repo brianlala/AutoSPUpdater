@@ -322,8 +322,8 @@ function StartTracing
     if (!$isTracing)
     {
         If ([string]::IsNullOrEmpty($logtime)) {$script:Logtime = Get-Date -Format yyyy-MM-dd_h-mm}
-        If ($server) {$script:LogFile = Join-Path -Path $([Environment]::GetFolderPath("Desktop")) -ChildPath "\AutoSPUpdater-$server-$script:Logtime.rtf"}
-        else {$script:LogFile = Join-Path -Path $([Environment]::GetFolderPath("Desktop")) -ChildPath "\AutoSPUpdater-$script:Logtime.rtf"}
+        If ($server) {$script:LogFile = Join-Path -Path $([Environment]::GetFolderPath("Desktop")) -ChildPath "\AutoSPUpdater-$server-$script:Logtime.log"}
+        else {$script:LogFile = Join-Path -Path $([Environment]::GetFolderPath("Desktop")) -ChildPath "\AutoSPUpdater-$script:Logtime.log"}
         Start-Transcript -Path $logFile -Append -Force
         If ($?) {$global:isTracing = $true}
     }

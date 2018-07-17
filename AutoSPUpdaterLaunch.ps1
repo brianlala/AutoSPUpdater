@@ -24,7 +24,7 @@
     the script will prompt you for it (in this case it will be obfuscated and encrypted). This parameter is only provided for maximum automation; normally it's best to leave it out.
 .PARAMETER skipParallelInstall
     By default, AutoSPUpdater will install binaries on the local server first, then install binaries on each other server in the farm in parallel. This can significantly speed
-    up patch installation. Use the -skipParallelInstall switch if you would instead like to install updates serially, one server at-a-time.
+    up patch installation. Use the -skipParallelInstall switch if you would instead like to install updates serially, one server at-a-time. Note, this switch isn't really used yet and has no effect.
 .PARAMETER useSqlSnapshot
     AutoSPUpdater can attempt to use a SQL snapshot (only available if the SQL instance(s) are running Enterprise Edition) when upgrading content databases. This can avoid unecessary downtime by pointing
     end-users to a read-only snapshot copy of the content database while the "real" database is being upgraded. Make sure your SQL server is indeed Enterprise Edition before attempting to use this option.
@@ -32,7 +32,7 @@
     https://github.com/brianlala/autospsourcebuilder
     http://blogs.msdn.com/b/russmax/archive/2013/04/01/why-sharepoint-2013-cumulative-update-takes-5-hours-to-install.aspx
 .NOTES
-    Created & maintained by Brian Lalancette (@brianlala), 2012-2017.
+    Created & maintained by Brian Lalancette (@brianlala), 2012-2018.
 #>
 [CmdletBinding()]
 
