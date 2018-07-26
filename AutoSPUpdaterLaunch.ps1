@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    Applies SharePoint 2010/2013/2016 updates (Service Packs + Cumulative/Public Updates) farm-wide, centrally from any server in the farm.
+    Applies SharePoint 2010/2013/2016/2019 updates (Service Packs + Cumulative/Public Updates) farm-wide, centrally from any server in the farm.
 .DESCRIPTION
     Consisting of a module and a "launcher" script, AutoSPUpdater will install SharePoint 201x updates in two phases: binary installation and PSConfig (AKA
     the command-line equivalent of the "Products and Technologies Configuration Wizard"). AutoSPUpdater leverages PowerShell remoting and will test connectivity
@@ -104,17 +104,7 @@ else
 }
 $Host.UI.RawUI.WindowTitle = "-- $env:COMPUTERNAME ($remoteWindowTitleString AutoSPUpdater) --"
 $Host.UI.RawUI.BackgroundColor = "Black"
-$spYears = @{"14" = "2010"; "15" = "2013"; "16" = "2016"}
-if ($null -eq $spVer)
-{
-    [string]$spVer = (Get-SPFarm).BuildVersion.Major
-    if (!$?)
-    {
-        Start-Sleep 10
-        throw "Could not determine version of farm."
-    }
-}
-$spYear = $spYears.$spVer
+$spYear = Get-SPYear
 if ([string]::IsNullOrEmpty($patchPath))
 {
     $patchPath = $bits+"\$spYear\Updates"
@@ -131,7 +121,22 @@ if (!(Test-Path -Path $patchPath -ErrorAction SilentlyContinue))
         throw "Patch path `"$patchPath`" does not appear to be valid."
     }
 }
-Write-Verbose -Message "`$patchPath is: $patchPath"
+Write-Verbose -Message "`$patchPath is: '$patchPath'"
+$updatesFound = Get-ChildItem -Path "$patchPath" -Include office2010*.exe,ubersrv*.exe,ubersts*.exe,*pjsrv*.exe,sharepointsp2013*.exe,coreserver201*.exe,sts201*.exe,wssloc201*.exe,svrproofloc201*.exe,oserver*.exe,wac*.exe,oslpksp*.exe -Recurse -ErrorAction SilentlyContinue | Sort-Object -Descending
+if ($updatesFound.Count -lt 1)
+{
+    throw "No updates were found in '$patchPath'; exiting."
+}
+else
+{
+    Write-Verbose -Message "Updates found:"
+    foreach ($updateFound in $updatesFound)
+    {
+        # Get the file name only, in case $updateToInstall includes part of a path (e.g. is in a subfolder)
+        $splitUpdate = Split-Path -Path $updateFound -Leaf
+        Write-Verbose -Message "`"$($updateFound.Directory.Name)\$splitUpdate`""
+    }
+}
 $PSConfig = "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$spVer\BIN\psconfig.exe"
 $PSConfigUI = "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$spVer\BIN\psconfigui.exe"
 
@@ -181,7 +186,7 @@ if ((Confirm-LocalSession) -and $farmServers.Count -gt 1) # Only do this stuff o
         }
         $currentDomain = "LDAP://" + ([ADSI]"").distinguishedName
         $null,$user = $credential.Username -split "\\"
-        if (($user -ne $null) -and ($credential.Password -ne $null)) {$passwordPlain = ConvertTo-PlainText $credential.Password}
+        if (($null -ne $user) -and ($null -ne $credential.Password)) {$passwordPlain = ConvertTo-PlainText $credential.Password}
         else
         {
             throw "Valid credentials are required for remote authentication."
@@ -189,7 +194,7 @@ if ((Confirm-LocalSession) -and $farmServers.Count -gt 1) # Only do this stuff o
         }
         Write-Host -ForegroundColor White " - Checking credentials: `"$($credential.Username)`"..." -NoNewline
         $dom = New-Object System.DirectoryServices.DirectoryEntry($currentDomain,$user,$passwordPlain)
-        If ($dom.Path -ne $null)
+        If ($null -ne $dom.Path)
         {
             Write-Host -ForegroundColor Black -BackgroundColor Green "Verified."
             $credentialVerified = $true
@@ -483,10 +488,17 @@ $global:isTracing = $false
 if (Confirm-LocalSession)
 {
     $caWebApp = Get-SPWebApplication -IncludeCentralAdministration | Where-Object {$_.IsAdministrationWebApplication}
-    $caWebAppUrl = ($caWebApp.Url).TrimEnd("/")
-    Write-Host -ForegroundColor White " - Launching `"$caWebAppUrl/_admin/PatchStatus.aspx`"..."
-    Write-Host -ForegroundColor White " - Review the patch status to ensure everything was applied OK."
-    Start-Process "$caWebAppUrl/_admin/PatchStatus.aspx" -WindowStyle Minimized
+    if ($null -ne $caWebApp)
+    {
+        $caWebAppUrl = ($caWebApp.Url).TrimEnd("/")
+        Write-Host -ForegroundColor White " - Launching `"$caWebAppUrl/_admin/PatchStatus.aspx`"..."
+        Write-Host -ForegroundColor White " - Review the patch status to ensure everything was applied OK."
+        Start-Process "$caWebAppUrl/_admin/PatchStatus.aspx" -WindowStyle Minimized
+    }
+    else
+    {
+        Write-Warning "Could not get Central Admin URL (possible issue in SP2016?)"
+    }
 }
 #endregion
 

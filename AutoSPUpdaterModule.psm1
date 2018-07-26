@@ -9,8 +9,7 @@ function InstallUpdatesFromPatchPath
         [Parameter(Mandatory=$false)][ValidateNotNullOrEmpty()]
         [string]$spVer
     )
-    $spYears = @{"14" = "2010"; "15" = "2013"; "16" = "2016"}
-    $spYear = $spYears.$spVer
+    $spYear = Get-SPYear
     Write-Host -ForegroundColor White " - Looking for SharePoint updates to install in $patchPath..."
     # Result codes below are from http://technet.microsoft.com/en-us/library/cc179058(v=office.14).aspx
     $oPatchInstallResultCodes = @{"17301" = "Error: General Detection error";
@@ -606,5 +605,24 @@ function Clear-SPConfigurationCache
         }
         Write-Host -ForegroundColor White " - Done clearing configuration cache."
     }
+}
+function Get-SPYear
+{
+    $spYears = @{"14" = "2010"; "15" = "2013"; "16" = "2016"} # Can't use this hashtable to map SharePoint 2019 versions because it uses version 16 as well
+    $farm = Get-SPFarm -ErrorAction SilentlyContinue
+    [string]$spVer = $farm.BuildVersion.Major
+    [string]$spBuild = $farm.BuildVersion.Build
+    if (!$spVer -or !$spBuild)
+    {
+        Start-Sleep 10
+        throw "Could not determine version of farm."
+    }
+    $spYear = $spYears.$spVer
+    # Accomodate SharePoint 2019 (uses the same major version number, but 5-digit build numbers)
+    if ($spBuild.Length -eq 5)
+    {
+        $spYear = "2019"
+    }
+    return $spYear
 }
 #endregion
