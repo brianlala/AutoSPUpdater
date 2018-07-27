@@ -104,7 +104,7 @@ else
 }
 $Host.UI.RawUI.WindowTitle = "-- $env:COMPUTERNAME ($remoteWindowTitleString AutoSPUpdater) --"
 $Host.UI.RawUI.BackgroundColor = "Black"
-$spYear = Get-SPYear
+$spVer,$spYear = Get-SPYear
 if ([string]::IsNullOrEmpty($patchPath))
 {
     $patchPath = $bits+"\$spYear\Updates"

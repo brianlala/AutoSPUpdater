@@ -623,6 +623,6 @@ function Get-SPYear
     {
         $spYear = "2019"
     }
-    return $spYear
+    return $spVer, $spYear
 }
 #endregion
