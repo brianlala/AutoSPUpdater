@@ -122,7 +122,7 @@ if (!(Test-Path -Path $patchPath -ErrorAction SilentlyContinue))
     }
 }
 Write-Verbose -Message "`$patchPath is: '$patchPath'"
-$updatesFound = Get-ChildItem -Path "$patchPath" -Include office2010*.exe,ubersrv*.exe,ubersts*.exe,*pjsrv*.exe,sharepointsp2013*.exe,coreserver201*.exe,sts201*.exe,wssloc201*.exe,svrproofloc201*.exe,oserver*.exe,wac*.exe,oslpksp*.exe -Recurse -ErrorAction SilentlyContinue | Sort-Object -Descending
+[array]$updatesFound = Get-ChildItem -Path "$patchPath" -Include office2010*.exe,ubersrv*.exe,ubersts*.exe,*pjsrv*.exe,sharepointsp2013*.exe,coreserver201*.exe,sts201*.exe,wssloc201*.exe,svrproofloc201*.exe,oserver*.exe,wac*.exe,oslpksp*.exe -Recurse -ErrorAction SilentlyContinue | Sort-Object -Descending
 if ($updatesFound.Count -lt 1)
 {
     throw "No updates were found in '$patchPath'; exiting."
