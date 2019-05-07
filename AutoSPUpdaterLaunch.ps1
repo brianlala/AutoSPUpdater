@@ -74,7 +74,7 @@ If (!([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]
 $0 = $myInvocation.MyCommand.Definition
 $launchPath = [System.IO.Path]::GetDirectoryName($0)
 $bits = Get-Item $launchPath | Split-Path -Parent
-# Check if we are running this from an Azure File Share. This doesn't really work for some reason.
+# Check if we are running this from an Azure File Share. Anyhow this doesn't really work for some reason.
 if ($bits -like "*file.core.windows.net*")
 {
     $storageAccountFQDN = $bits -replace '\\\\',''
@@ -145,6 +145,9 @@ UnblockFiles -path $patchPath
 
 #region Get Farm Servers & Credentials
 [array]$farmServers = (Get-SPFarm).Servers | Where-Object {$_.Role -ne "Invalid"}
+[hashtable]$rolesPerServer = @{}
+# Add each farm server and its role to the $rolesPerServer hashtable
+$farmServers | ForEach-Object {$rolesPerServer.Add($_.Name,"$($_.Role)")}
 if (($patchPath -like "*:*" -or $launchPath -like "*:*") -and $farmServers.Count -gt 1)
 {
     Write-Host -ForegroundColor Yellow " - The path where updates reside ($patchPath) and/or where the script"
@@ -235,19 +238,23 @@ if ($spVer -eq 15 -and (Confirm-LocalSession))
 #endregion
 
 #region Stop Services
-Write-Host -ForegroundColor White " - Temporarily disabling and stopping services..."
-foreach ($service in $servicesToStop)
+# Only really need to do this for pre-SP2016
+if ($spVer -le 15)
 {
-    $serviceExists = Get-Service $service -ErrorAction SilentlyContinue
-    if ($serviceExists -and (Get-Service $service).Status -eq "Running")
+    Write-Host -ForegroundColor White " - Temporarily disabling and stopping services..."
+    foreach ($service in $servicesToStop)
     {
-        Write-Host -ForegroundColor White "  - Stopping service $((Get-Service -Name $service).DisplayName)..."
-        Set-Service -Name $service -StartupType Disabled
-        Stop-Service -Name $service -Force
-        New-Variable -Name $service"WasRunning" -Value $true
+        $serviceExists = Get-Service $service -ErrorAction SilentlyContinue
+        if ($serviceExists -and (Get-Service $service).Status -eq "Running")
+        {
+            Write-Host -ForegroundColor White "  - Stopping service $((Get-Service -Name $service).DisplayName)..."
+            Set-Service -Name $service -StartupType Disabled
+            Stop-Service -Name $service -Force
+            New-Variable -Name $service"WasRunning" -Value $true
+        }
     }
+    Write-Host -ForegroundColor White " - Services are now stopped."
 }
-Write-Host -ForegroundColor White " - Services are now stopped."
 #endregion
 
 #region Install Remote Patch Binaries
@@ -304,25 +311,29 @@ Clear-SPConfigurationCache
 #endregion
 
 #region Start Services
-Write-Host -ForegroundColor White " - Re-enabling & starting services..."
-ForEach ($service in $servicesToStart)
+# Only really need to do this for pre-SP2016
+if ($spVer -le 15)
 {
-    if ($service -like "OSearch*") # The OSearch* service by default has startup type "Manual" so let's keep it that way
+    Write-Host -ForegroundColor White " - Re-enabling & starting services..."
+    ForEach ($service in $servicesToStart)
     {
-        $startupType = "Manual"
+        if ($service -like "OSearch*") # The OSearch* service by default has startup type "Manual" so let's keep it that way
+        {
+            $startupType = "Manual"
+        }
+        else
+        {
+            $startupType = "Automatic"
+        }
+        if ((Get-Variable -Name $service"WasRunning" -ValueOnly -ErrorAction SilentlyContinue) -eq $true)
+        {
+            Set-Service -Name $service -StartupType $startupType
+            Write-Host -ForegroundColor White "  - Starting service $((Get-Service -Name $service).DisplayName)..."
+            Start-Service -Name $service
+        }
     }
-    else
-    {
-        $startupType = "Automatic"
-    }
-    if ((Get-Variable -Name $service"WasRunning" -ValueOnly -ErrorAction SilentlyContinue) -eq $true)
-    {
-        Set-Service -Name $service -StartupType $startupType
-        Write-Host -ForegroundColor White "  - Starting service $((Get-Service -Name $service).DisplayName)..."
-        Start-Service -Name $service
-    }
+    Write-Host -ForegroundColor White " - Services are now started."
 }
-Write-Host -ForegroundColor White " - Services are now started."
 #endregion
 
 #region Get-SPProduct

@@ -413,9 +413,9 @@ function Test-PSConfig
     param ()
     $PSConfigLogLocation = $((Get-SPDiagnosticConfig).LogLocation) -replace "%CommonProgramFiles%","$env:CommonProgramFiles"
     $PSConfigLog = Get-ChildItem -Path $PSConfigLogLocation | Where-Object {$_.Name -like "PSCDiagnostics*"} | Sort-Object -Descending -Property "LastWriteTime" | Select-Object -first 1
-    If ($PSConfigLog -eq $null)
+    If ($null -eq $PSConfigLog)
     {
-        Throw " - Could not find PSConfig log file!"
+        Write-Warning " - Could not find PSConfig log file!"
     }
     Else
     {
@@ -516,17 +516,19 @@ function Update-ContentDatabases
     $upgradeContentDBScriptBlock = {
         ##$Host.UI.RawUI.WindowTitle = "-- Upgrading Content Databases --"
         ##$Host.UI.RawUI.BackgroundColor = "Black"
-        if ($useSqlSnapshot)
+        # Only allow use of SQL snapshots when updating content databases if we are on SP2013 or earlier, as there is no benefit with SP2016+ per https://blog.stefan-gossner.com/2016/04/29/sharepoint-2016-zero-downtime-patching-demystified/
+        if ($useSqlSnapshot -and $spVer -le "15")
         {
             $UseSnapshotParameter = @{UseSnapshot = $true}
         }
         else
         {
             $UseSnapshotParameter = @{}
+            Write-Verbose -Message " - Not using SQL snapshots to upgrade content databases, either because useSQLSnapshot not specified or the SharePoint farm is 2016 or newer."
         }
         Add-PSSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue
         # Updated to include all content databases, including ones that are "stopped"
-        [array]$contentDatabases = Get-SPDatabase | Where-Object {$_.WebApplication -ne $null} | Sort-Object Name
+        [array]$contentDatabases = Get-SPDatabase | Where-Object {$null -ne $_.WebApplication} | Sort-Object Name
         Write-Host -ForegroundColor White " - Upgrading SharePoint content databases:"
         foreach ($contentDatabase in $contentDatabases)
         {
