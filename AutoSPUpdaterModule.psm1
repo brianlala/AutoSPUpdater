@@ -137,14 +137,18 @@ function Install-Remote
             {
                 $versionSwitch = "-Version 2"
             }
-            else {$versionSwitch = ""}
+            else 
+			{
+				$versionSwitch = ""
+			}
+
             Start-Process -FilePath "$PSHOME\powershell.exe" -ArgumentList "$versionSwitch `
                                                                             -ExecutionPolicy Bypass Invoke-Command -ScriptBlock {
                                                                             Import-Module -Name `"$launchPath\AutoSPUpdaterModule.psm1`" -DisableNameChecking -Global -Force `
                                                                             StartTracing -Server $server; `
                                                                             Test-ServerConnection -Server $server; `
-                                                                            Enable-RemoteSession -Server $server -plainPass $(ConvertFrom-SecureString $($credential.Password)) -launchPath $launchPath; `
-                                                                            Start-RemoteUpdate -Server $server -plainPass $(ConvertFrom-SecureString $($credential.Password)) -launchPath $launchPath -patchPath $patchPath -spVer $spver $verboseSwitch; `
+                                                                            Enable-RemoteSession -Server $server -plainPass $(ConvertFrom-SecureString $($credential.Password)) -launchPath '$launchPath'; `
+                                                                            Start-RemoteUpdate -Server $server -plainPass $(ConvertFrom-SecureString $($credential.Password)) -launchPath '$launchPath' -patchPath '$patchPath' -spVer $spver $verboseSwitch; `
                                                                             Pause `"exit`"; `
                                                                             Stop-Transcript -ErrorAction SilentlyContinue}" -Verb Runas
             Start-Sleep 10
