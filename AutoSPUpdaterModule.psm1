@@ -9,7 +9,7 @@ function InstallUpdatesFromPatchPath
         [Parameter(Mandatory=$false)][ValidateNotNullOrEmpty()]
         [string]$spVer
     )
-    $spYear = Get-SPYear
+    $spVer,$spYear = Get-SPYear
     Write-Host -ForegroundColor White " - Looking for SharePoint updates to install in $patchPath..."
     # Result codes below are from http://technet.microsoft.com/en-us/library/cc179058(v=office.14).aspx
     $oPatchInstallResultCodes = @{"17301" = "Error: General Detection error";
@@ -133,7 +133,7 @@ function Install-Remote
         if (!($skipParallelInstall)) # Launch each farm server install simultaneously
         {
             # Add the -Version 2 switch in case we are installing SP2010 on Windows Server 2012 or 2012 R2
-            if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($spVer -eq "14"))
+            if (((Get-CimInstance -ClassName Win32_OperatingSystem).Version -like "6.2*" -or (Get-CimInstance -ClassName Win32_OperatingSystem).Version -like "6.3*") -and ($spVer -eq "14"))
             {
                 $versionSwitch = "-Version 2"
             }
@@ -143,8 +143,8 @@ function Install-Remote
                                                                             Import-Module -Name `"$launchPath\AutoSPUpdaterModule.psm1`" -DisableNameChecking -Global -Force `
                                                                             StartTracing -Server $server; `
                                                                             Test-ServerConnection -Server $server; `
-                                                                            Enable-RemoteSession -Server $server -plainPass $(ConvertFrom-SecureString $($credential.Password)) -launchPath $launchPath; `
-                                                                            Start-RemoteUpdate -Server $server -plainPass $(ConvertFrom-SecureString $($credential.Password)) -launchPath $launchPath -patchPath $patchPath -spVer $spver $verboseSwitch; `
+                                                                            Enable-RemoteSession -Server $server -plainPass $(ConvertFrom-SecureString $($credential.Password)) -launchPath `"$launchPath`"; `
+                                                                            Start-RemoteUpdate -Server $server -plainPass $(ConvertFrom-SecureString $($credential.Password)) -launchPath `"$launchPath`" -patchPath `"$patchPath`" -spVer $spver $verboseSwitch; `
                                                                             Pause `"exit`"; `
                                                                             Stop-Transcript -ErrorAction SilentlyContinue}" -Verb Runas
             Start-Sleep 10
@@ -307,6 +307,7 @@ function Enable-RemoteSession
     # Another way to exit powershell when running over PsExec from http://www.leeholmes.com/blog/2007/10/02/using-powershell-and-PsExec-to-invoke-expressions-on-remote-computers/
     # PsExec \\server cmd /c "echo . | powershell {command}"
     Write-Host -ForegroundColor White " - Enabling PowerShell remoting on `"$server`" via PsExec..."
+    Write-Verbose -Message "Running '$psexec /acceptEula \\$server -u $username -p $password -h powershell.exe -Command `"$configureTargetScript`"..."
     Start-Process -FilePath "$psExec" `
                   -ArgumentList "/acceptEula \\$server -u $username -p $password -h powershell.exe -Command `"$configureTargetScript`"" `
                   -Wait -NoNewWindow
@@ -540,7 +541,7 @@ function Update-ContentDatabases
     # Kick off a separate PowerShell process to update content databases prior to running PSConfig
     Write-Host -ForegroundColor White " - Upgrading content databases in a separate process..."
     # Some special accomodations for older OSes and PowerShell versions
-    if (((Get-WmiObject Win32_OperatingSystem).Version -like "6.1*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.2*" -or (Get-WmiObject Win32_OperatingSystem).Version -like "6.3*") -and ($spVer -eq "14"))
+    if (((Get-CimInstance -ClassName Win32_OperatingSystem).Version -like "6.1*" -or (Get-CimInstance -ClassName Win32_OperatingSystem).Version -like "6.2*" -or (Get-CimInstance -ClassName Win32_OperatingSystem).Version -like "6.3*") -and ($spVer -eq "14"))
     {
         $upgradeContentDBJob = Start-Job -Name "UpgradeContentDBJob" -ScriptBlock $upgradeContentDBScriptBlock
         Write-Host -ForegroundColor Cyan " - Waiting for content databases to finish upgrading..." -NoNewline

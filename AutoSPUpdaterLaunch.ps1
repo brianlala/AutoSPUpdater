@@ -54,7 +54,7 @@ if ($VerbosePreference -eq "Continue")
 }
 else
 {
-        $verboseParameter = @{}
+    $verboseParameter = @{}
 }
 
 $servicesToStop = ("SPTimerV4","SPSearch4","OSearch14","OSearch15","OSearch16","SPSearchHostController")
@@ -274,7 +274,7 @@ if ($farmservers | Where-Object {$_ -match $env:COMPUTERNAME}) # Had to do it th
         if ((Confirm-LocalSession) -and !([string]::IsNullOrEmpty($remoteFarmServers)))
         {
             Write-Verbose -Message "Kicking off remote installs..."
-            Install-Remote -skipParallelInstall:$skipParallelInstall -remoteFarmServers $remoteFarmServers -credential $credential -launchPath $launchPath -patchPath $patchPath @verboseParameter
+            Install-Remote -skipParallelInstall:$skipParallelInstall -remoteFarmServers $remoteFarmServers -credential $credential -launchPath "$launchPath" -patchPath "$patchPath" @verboseParameter
         }
     }
     catch
@@ -356,7 +356,7 @@ if (Confirm-LocalSession)
 # Only need to resume a paused Search Service Application(s) if running SharePoint 2013
 if ($spVer -eq 15)
 {
-   Request-SPSearchServiceApplicationStatus -desiredStatus Online
+    Request-SPSearchServiceApplicationStatus -desiredStatus Online
 }
 #endregion
 
