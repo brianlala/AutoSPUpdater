@@ -611,7 +611,7 @@ function Clear-SPConfigurationCache
 }
 function Get-SPYear
 {
-    $spYears = @{"14" = "2010"; "15" = "2013"; "16" = "2016"} # Can't use this hashtable to map SharePoint 2019 versions because it uses version 16 as well
+    $spYears = @{"14" = "2010"; "15" = "2013"; "16" = "2016"} # Can't use this hashtable to map SharePoint 2019 or SE versions because they use major version 16 as well
     $farm = Get-SPFarm -ErrorAction SilentlyContinue
     [string]$spVer = $farm.BuildVersion.Major
     [string]$spBuild = $farm.BuildVersion.Build
@@ -625,16 +625,16 @@ function Get-SPYear
     # Accomodate SharePoint 2019 / SE (uses the same major version number, but 5-digit build numbers)
     if ($spBuild.Length -eq 5)
     {
-        if($spBuild -lt 14326)
-        {
-            $spYear = "2019"
-        }
-        else
+        # Accomodate for SP Subscription Edition
+        if ($spBuild -ge 13116)
         {
             $spYear = "SE"
         }
-    }    
-
+        else
+        {
+            $spYear = "2019"
+        }
+    }
     return $spVer, $spYear
 }
 #endregion

@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    Applies SharePoint 2010/2013/2016/2019 updates (Service Packs + Cumulative/Public Updates) farm-wide, centrally from any server in the farm.
+    Applies SharePoint 2010/2013/2016/2019/SE updates (Service Packs + Cumulative/Public Updates) farm-wide, centrally from any server in the farm.
 .DESCRIPTION
     Consisting of a module and a "launcher" script, AutoSPUpdater will install SharePoint 201x updates in two phases: binary installation and PSConfig (AKA
     the command-line equivalent of the "Products and Technologies Configuration Wizard"). AutoSPUpdater leverages PowerShell remoting and will test connectivity
@@ -29,10 +29,11 @@
     AutoSPUpdater can attempt to use a SQL snapshot (only available if the SQL instance(s) are running Enterprise Edition) when upgrading content databases. This can avoid unecessary downtime by pointing
     end-users to a read-only snapshot copy of the content database while the "real" database is being upgraded. Make sure your SQL server is indeed Enterprise Edition before attempting to use this option.
 .LINK
+    https://github.com/brianlala/autospupdater
     https://github.com/brianlala/autospsourcebuilder
     http://blogs.msdn.com/b/russmax/archive/2013/04/01/why-sharepoint-2013-cumulative-update-takes-5-hours-to-install.aspx
 .NOTES
-    Created & maintained by Brian Lalancette (@brianlala), 2012-2018.
+    Created & maintained by Brian Lalancette (@brianlala), 2012-2022.
 #>
 [CmdletBinding()]
 
