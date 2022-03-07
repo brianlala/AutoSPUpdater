@@ -5,8 +5,8 @@
     Consisting of a module and a "launcher" script, AutoSPUpdater will install SharePoint 201x updates in two phases: binary installation and PSConfig (AKA
     the command-line equivalent of the "Products and Technologies Configuration Wizard"). AutoSPUpdater leverages PowerShell remoting and will test connectivity
     to other servers in the farm (automatically detected using Get-SPFarm) via ping, so this must be allowed through Windows Firewall. The script will prompt when
-    the binary installation has completed on each server prior to running PSConfig. The script will also pause the SharePoint 2013 Search Service Application to
-    speed up patching (only required on SP2013). For best results, run the script from a UNC/shared path (NOT a mapped drive) e.g. "\\server\share$\SP\Scripts".
+    the binary installation has completed on each server prior to running PSConfig. The script will also pause the SharePoint 2013 (and newer) Search Service Application(s) to
+    speed up patching. For best results, run the script from a UNC/shared path (NOT a mapped drive) e.g. "\\server\share$\SP\Scripts".
     You can also run this from a regular local path but ONLY if the script and update files exist identically on each server in the farm. Currently, Azure file shares
     (e.g. *.file.core.windows.net) don't work as UNC sources, probably due to the way authentication is implemented. In general, you should make sure that all
     servers in your farm have connectivity and access to the path you run this script from.
@@ -32,6 +32,7 @@
     https://github.com/brianlala/autospupdater
     https://github.com/brianlala/autospsourcebuilder
     http://blogs.msdn.com/b/russmax/archive/2013/04/01/why-sharepoint-2013-cumulative-update-takes-5-hours-to-install.aspx
+    https://docs.microsoft.com/en-us/SharePoint/upgrade-and-update/install-a-software-update#install-a-software-update-on-servers-that-host-search-components
 .NOTES
     Created & maintained by Brian Lalancette (@brianlala), 2012-2022.
 #>
@@ -66,7 +67,7 @@ $servicesToStart = ("SPSearchHostController","OSearch14","OSearch15","OSearch16"
 # First check if we are running this under an elevated session. Pulled from the script at http://gallery.technet.microsoft.com/scriptcenter/1b5df952-9e10-470f-ad7c-dc2bdc2ac946
 If (!([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator"))
 {
-    Write-Warning " - You must run this script under an elevated PowerShell prompt. Launch an elevated PowerShell prompt by right-clicking the PowerShell shortcut and selecting `"Run as Administrator`"."
+    Write-Warning " - You must run this script under an elevated PowerShell prompt. Launch an elevated PowerShell prompt by right-clicking the PowerShell shortcut and selecting 'Run as Administrator'."
     break
 }
 #endregion
@@ -86,15 +87,19 @@ if ($bits -like "*file.core.windows.net*")
     # Store credentials locally to access the Azure File Share
     Start-Process -FilePath cmdkey.exe -ArgumentList "/add:$storageAccountFQDN /user:$storageAccountUsername /pass:$storageAccountPrimaryKey" -Wait -NoNewWindow -LoadUserProfile
 }
-Write-Host -ForegroundColor White " - Loading SharePoint PowerShell Snapin..."
-# Added the line below to match what the SharePoint.ps1 file implements (normally called via the SharePoint Management Shell Start Menu shortcut)
-if (!($Host.Name -eq "ServerRemoteHost")) {$Host.Runspace.ThreadOptions = "ReuseThread"}
-Add-PsSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null
+# Import the SharePoint PowerShell snapin for versions prior to Subscription Edition
+if ($null -eq (Get-PsSnapin | Where-Object {$_.Name -eq "Microsoft.SharePoint.PowerShell"}) -and $null -eq (Get-Module -Name "SharePointServer"))
+{
+    Write-Output " - Loading SharePoint PowerShell Snapin..."
+    # Added the line below to match what the SharePoint.ps1 file implements (normally called via the SharePoint Management Shell Start Menu shortcut)
+    if (!($Host.Name -eq "ServerRemoteHost")) {$Host.Runspace.ThreadOptions = "ReuseThread"}
+    Add-PsSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null
+}
 Import-Module -Name "$launchPath\AutoSPUpdaterModule.psm1" -DisableNameChecking -Global -Force -ErrorAction Inquire
 If (Confirm-LocalSession)
 {
     $remoteWindowTitleString = "Local"
-    Start-Sleep -Seconds 1
+    Start-Sleep -Seconds 2
     Clear-Host
     if (!$startDate) {$startDate = Get-Date}
     StartTracing # Only start tracing if this is a local session
@@ -112,14 +117,14 @@ if ([string]::IsNullOrEmpty($patchPath))
 }
 if (!(Test-Path -Path $patchPath -ErrorAction SilentlyContinue))
 {
-    Write-Host -ForegroundColor Yellow " - Patch path `"$patchPath`" does not appear to be valid; checking in standard location `"C:\SP\$spYear\Updates`"..."
+    Write-Host -ForegroundColor Yellow " - Patch path '$patchPath' does not appear to be valid; checking in standard location 'C:\SP\$spYear\Updates'..."
     if (Test-Path -Path "C:\SP\$spYear\Updates")
     {
         $patchPath = "C:\SP\$spYear\Updates"
     }
     else
     {
-        throw "Patch path `"$patchPath`" does not appear to be valid."
+        throw "Patch path '$patchPath' does not appear to be valid."
     }
 }
 Write-Verbose -Message "`$patchPath is: '$patchPath'"
@@ -135,7 +140,7 @@ else
     {
         # Get the file name only, in case $updateToInstall includes part of a path (e.g. is in a subfolder)
         $splitUpdate = Split-Path -Path $updateFound -Leaf
-        Write-Verbose -Message "`"$($updateFound.Directory.Name)\$splitUpdate`""
+        Write-Verbose -Message "'$($updateFound.Directory.Name)\$splitUpdate'"
     }
 }
 $PSConfig = "$env:CommonProgramFiles\Microsoft Shared\Web Server Extensions\$spVer\BIN\psconfig.exe"
@@ -196,7 +201,7 @@ if ((Confirm-LocalSession) -and $farmServers.Count -gt 1) # Only do this stuff o
             throw "Valid credentials are required for remote authentication."
             Pause "exit"
         }
-        Write-Host -ForegroundColor White " - Checking credentials: `"$($credential.Username)`"..." -NoNewline
+        Write-Host -ForegroundColor White " - Checking credentials: '$($credential.Username)'..." -NoNewline
         $dom = New-Object System.DirectoryServices.DirectoryEntry($currentDomain,$user,$passwordPlain)
         If ($null -ne $dom.Path)
         {
@@ -231,8 +236,8 @@ foreach ($avPath in $avPaths)
 #endregion
 
 #region Pause Search Service Application
-# Only need to pause the Search Service Application(s) if running SharePoint 2013 and only attempt on the first (local) server in the farm
-if ($spVer -eq 15 -and (Confirm-LocalSession))
+# Pause the Search Service Application(s) if running SharePoint 2013+ and only attempt on the first (local) server in the farm
+if ($spVer -ge 15 -and (Confirm-LocalSession))
 {
     Request-SPSearchServiceApplicationStatus -desiredStatus Paused @verboseParameter
 }
@@ -347,15 +352,15 @@ if (Confirm-LocalSession)
 {
     $caWebApp = Get-SPWebApplication -IncludeCentralAdministration | Where-Object {$_.IsAdministrationWebApplication}
     $caWebAppUrl = ($caWebApp.Url).TrimEnd("/")
-    Write-Host -ForegroundColor White " - Launching `"$caWebAppUrl/_admin/FarmServers.aspx`"..."
+    Write-Host -ForegroundColor White " - Launching '$caWebAppUrl/_admin/FarmServers.aspx'..."
     Write-Host -ForegroundColor White " - You can use this to track the status of each server's configuration."
     Start-Process "$caWebAppUrl/_admin/FarmServers.aspx" -WindowStyle Minimized
 }
 #endregion
 
 #region Resume Search Service Application
-# Only need to resume a paused Search Service Application(s) if running SharePoint 2013
-if ($spVer -eq 15)
+# Resume a paused Search Service Application(s) if running SharePoint 2013+
+if ($spVer -ge 15)
 {
     Request-SPSearchServiceApplicationStatus -desiredStatus Online
 }
@@ -382,7 +387,7 @@ if (Test-UpgradeRequired -eq $true)
         {
             Write-Host -ForegroundColor Cyan "  - $($contentDatabase.Name)"
         }
-        Write-Host -ForegroundColor White " - If any content databases are in a SQL Availability Group, you can `"Suspend Data Movement`" to speed up the upgrade."
+        Write-Host -ForegroundColor White " - If any content databases are in a SQL Availability Group, you can 'Suspend Data Movement' to speed up the upgrade."
         # Only need to pause if this isn't the only server in the farm
         if ($farmServers.Count -gt 1)
         {
@@ -394,7 +399,7 @@ if (Test-UpgradeRequired -eq $true)
         {
             $caWebApp = Get-SPWebApplication -IncludeCentralAdministration | Where-Object {$_.IsAdministrationWebApplication}
             $caWebAppUrl = ($caWebApp.Url).TrimEnd("/")
-            Write-Host -ForegroundColor White " - Launching `"$caWebAppUrl/_admin/DatabaseStatus.aspx`"..."
+            Write-Host -ForegroundColor White " - Launching '$caWebAppUrl/_admin/DatabaseStatus.aspx'..."
             Write-Host -ForegroundColor White " - You can use this to track the status of each content database upgrade."
             Start-Sleep -Seconds 3
             Start-Process "$caWebAppUrl/_admin/DatabaseStatus.aspx" -WindowStyle Minimized
@@ -503,7 +508,7 @@ if (Confirm-LocalSession)
     if ($null -ne $caWebApp)
     {
         $caWebAppUrl = ($caWebApp.Url).TrimEnd("/")
-        Write-Host -ForegroundColor White " - Launching `"$caWebAppUrl/_admin/PatchStatus.aspx`"..."
+        Write-Host -ForegroundColor White " - Launching '$caWebAppUrl/_admin/PatchStatus.aspx'..."
         Write-Host -ForegroundColor White " - Review the patch status to ensure everything was applied OK."
         Start-Process "$caWebAppUrl/_admin/PatchStatus.aspx" -WindowStyle Minimized
     }

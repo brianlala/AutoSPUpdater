@@ -51,8 +51,8 @@ function InstallUpdatesFromPatchPath
         {
             # Get the file name only, in case $updateToInstall includes part of a path (e.g. is in a subfolder)
             $splitUpdate = Split-Path -Path $updateToInstall -Leaf
-            Write-Verbose -Message "Running `"Start-Process -FilePath `"$updateToInstall`" -ArgumentList `"/passive /norestart`" -LoadUserProfile`""
-            Write-Host -ForegroundColor Cyan "   - Installing $splitUpdate from `"$($updateToInstall.Directory.Name)`"..." -NoNewline
+            Write-Verbose -Message "Running 'Start-Process -FilePath '$updateToInstall' -ArgumentList '/passive /norestart' -LoadUserProfile'"
+            Write-Host -ForegroundColor Cyan "   - Installing $splitUpdate from '$($updateToInstall.Directory.Name)'..." -NoNewline
             $startTime = Get-Date
             Start-Process -FilePath "$updateToInstall" -ArgumentList "/passive /norestart" -LoadUserProfile
             Show-Progress -Process $($splitUpdate -replace ".exe", "") -Color Cyan -Interval 5
@@ -140,12 +140,12 @@ function Install-Remote
             else {$versionSwitch = ""}
             Start-Process -FilePath "$PSHOME\powershell.exe" -ArgumentList "$versionSwitch `
                                                                             -ExecutionPolicy Bypass Invoke-Command -ScriptBlock {
-                                                                            Import-Module -Name `"$launchPath\AutoSPUpdaterModule.psm1`" -DisableNameChecking -Global -Force `
+                                                                            Import-Module -Name '$launchPath\AutoSPUpdaterModule.psm1' -DisableNameChecking -Global -Force `
                                                                             StartTracing -Server $server; `
                                                                             Test-ServerConnection -Server $server; `
-                                                                            Enable-RemoteSession -Server $server -plainPass $(ConvertFrom-SecureString $($credential.Password)) -launchPath `"$launchPath`"; `
-                                                                            Start-RemoteUpdate -Server $server -plainPass $(ConvertFrom-SecureString $($credential.Password)) -launchPath `"$launchPath`" -patchPath `"$patchPath`" -spVer $spver $verboseSwitch; `
-                                                                            Pause `"exit`"; `
+                                                                            Enable-RemoteSession -Server $server -plainPass $(ConvertFrom-SecureString $($credential.Password)) -launchPath '$launchPath'; `
+                                                                            Start-RemoteUpdate -Server $server -plainPass $(ConvertFrom-SecureString $($credential.Password)) -launchPath '$launchPath' -patchPath '$patchPath' -spVer $spver $verboseSwitch; `
+                                                                            Pause 'exit'; `
                                                                             Stop-Transcript -ErrorAction SilentlyContinue}" -Verb Runas
             Start-Sleep 10
         }
@@ -194,7 +194,7 @@ function Start-RemoteUpdate
     Invoke-Command -ScriptBlock {param ($value) Set-Variable -Name verboseParameter -Value $value} -ArgumentList $verboseParameter -Session $session
     Write-Host -ForegroundColor White " - Launching AutoSPUpdater..."
     Invoke-Command -ScriptBlock {& "$launchPath\AutoSPUpdaterLaunch.ps1" -patchPath $patchPath -remoteAuthPassword $(ConvertFrom-SecureString $($credential.Password)) @verboseParameter} -Session $session
-    Write-Host -ForegroundColor White " - Removing session `"$($session.Name)...`""
+    Write-Host -ForegroundColor White " - Removing session '$($session.Name)...'"
     Remove-PSSession $session
 }
 #endregion
@@ -218,7 +218,7 @@ function Pause($action, $key)
     }
     else
     {
-        $actionString = " - Enter `"$key`" to $action"
+        $actionString = " - Enter '$key' to $action"
         $continue = Read-Host -Prompt $actionString
         if ($continue -ne $key) {pause $action $key}
 
@@ -228,7 +228,7 @@ function Import-SharePointPowerShell
 {
     [CmdletBinding()]
     param ()
-    if ($null -eq (Get-PsSnapin | Where-Object {$_.Name -eq "Microsoft.SharePoint.PowerShell"}))
+    if ($null -eq (Get-PsSnapin | Where-Object {$_.Name -eq "Microsoft.SharePoint.PowerShell"}) -and ($null -eq (Get-Module -Name "SharePointServer")))
     {
         Write-Host -ForegroundColor White " - (Re-)Loading SharePoint PowerShell Snapin..."
         # Added the line below to match what the SharePoint.ps1 file implements (normally called via the SharePoint Management Shell Start Menu shortcut)
@@ -251,7 +251,7 @@ function Enable-CredSSP
     Write-Verbose -Message "Remote farm servers: $remoteFarmServers"
     foreach ($server in $remoteFarmServers)
     {
-        Write-Host -ForegroundColor White " - Enabling WSManCredSSP for `"$server`""
+        Write-Host -ForegroundColor White " - Enabling WSManCredSSP for '$server'"
         Enable-WSManCredSSP -Role Client -Force -DelegateComputer $server | Out-Null
         if (!$?) {Pause "exit"; throw $_}
     }
@@ -263,18 +263,18 @@ function Test-ServerConnection
     (
         [string]$server
     )
-    Write-Verbose -Message "Running `"Test-Connection -ComputerName $server -Count 1 -Quiet`""
-    Write-Host -ForegroundColor White " - Testing connection (via Ping) to `"$server`"..." -NoNewline
+    Write-Verbose -Message "Running 'Test-Connection -ComputerName $server -Count 1 -Quiet'"
+    Write-Host -ForegroundColor White " - Testing connection (via Ping) to '$server'..." -NoNewline
     $canConnect = Test-Connection -ComputerName $server -Count 1 -Quiet
     if ($canConnect) {Write-Host -ForegroundColor Cyan -BackgroundColor Black $($canConnect.ToString() -replace "True","Success.")}
     if (!$canConnect)
     {
         Write-Host -ForegroundColor Yellow -BackgroundColor Black $($canConnect.ToString() -replace "False","Failed.")
-        Write-Host -ForegroundColor Yellow " - Check that `"$server`":"
+        Write-Host -ForegroundColor Yellow " - Check that '$server':"
         Write-Host -ForegroundColor Yellow "  - Is online"
         Write-Host -ForegroundColor Yellow "  - Has the required Windows Firewall exceptions set (or turned off)"
         Write-Host -ForegroundColor Yellow "  - Has a valid DNS entry for $server.$($env:USERDNSDOMAIN)"
-        throw "Ping connectivity test failed for `"$server`""
+        throw "Ping connectivity test failed for '$server'"
     }
 }
 function Enable-RemoteSession
@@ -300,16 +300,16 @@ function Enable-RemoteSession
         Start-BitsTransfer -Source $psExecUrl -Destination $psExec -DisplayName "Downloading Sysinternals PsExec..." -Priority Foreground -Description "From $psExecUrl..." -ErrorVariable err
         If ($err) {Write-Warning "Could not download PsExec!"; Pause "exit"; break}
     }
-    Write-Host -ForegroundColor White " - Updating PowerShell execution policy on `"$server`" via PsExec..."
+    Write-Host -ForegroundColor White " - Updating PowerShell execution policy on '$server' via PsExec..."
     Start-Process -FilePath "$psExec" `
-                  -ArgumentList "/acceptEula \\$server -h powershell.exe -Command `"try {Set-ExecutionPolicy Bypass -Force} catch {}; Stop-Process -Id `$PID`"" `
+                  -ArgumentList "/acceptEula \\$server -h powershell.exe -Command 'try {Set-ExecutionPolicy Bypass -Force} catch {}; Stop-Process -Id `$PID'" `
                   -Wait -NoNewWindow
     # Another way to exit powershell when running over PsExec from http://www.leeholmes.com/blog/2007/10/02/using-powershell-and-PsExec-to-invoke-expressions-on-remote-computers/
     # PsExec \\server cmd /c "echo . | powershell {command}"
-    Write-Host -ForegroundColor White " - Enabling PowerShell remoting on `"$server`" via PsExec..."
-    Write-Verbose -Message "Running '$psexec /acceptEula \\$server -u $username -p $password -h powershell.exe -Command `"$configureTargetScript`"..."
+    Write-Host -ForegroundColor White " - Enabling PowerShell remoting on '$server' via PsExec..."
+    Write-Verbose -Message "Running '$psexec /acceptEula \\$server -u $username -p $password -h powershell.exe -Command '$configureTargetScript'..."
     Start-Process -FilePath "$psExec" `
-                  -ArgumentList "/acceptEula \\$server -u $username -p $password -h powershell.exe -Command `"$configureTargetScript`"" `
+                  -ArgumentList "/acceptEula \\$server -u $username -p $password -h powershell.exe -Command '$configureTargetScript'" `
                   -Wait -NoNewWindow
 }
 function StartTracing
@@ -342,7 +342,7 @@ function UnblockFiles ($path)
             Write-Host -ForegroundColor White "Done."
         }
         $safeHost = ($path -split "\\")[2]
-        Write-Host -ForegroundColor White " - Adding location `"$safeHost`" to local Intranet security zone to prevent security prompts..." -NoNewline
+        Write-Host -ForegroundColor White " - Adding location '$safeHost' to local Intranet security zone to prevent security prompts..." -NoNewline
         New-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ZoneMap\Domains" -Name $safeHost -ItemType Leaf -Force | Out-Null
         New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings\ZoneMap\Domains\$safeHost" -Name "file" -value "1" -PropertyType dword -Force | Out-Null
         Write-Host -ForegroundColor White "Done."
@@ -466,16 +466,16 @@ function Request-SPSearchServiceApplicationStatus
                 if ($null -eq $status) {throw}
                 if (Invoke-Expression -Command "$statusCheck")
                 {
-                    Write-Host -ForegroundColor White "  - `"$($searchServiceApplication.Name)`" is already $desiredStatus."
+                    Write-Host -ForegroundColor White "  - '$($searchServiceApplication.Name)' is already $desiredStatus."
                 }
                 else
                 {
                     # Only pause if we are resuming, and if there are multiple farm servers
                     if ($action -eq "Resume" -and $farmServers.Count -gt 1)
                     {
-                        Pause "$($action.ToLower()) `"$($searchServiceApplication.Name)`" after all installs have completed" "y"
+                        Pause "$($action.ToLower()) '$($searchServiceApplication.Name)' after all installs have completed" "y"
                     }
-                    Write-Host -ForegroundColor White "  - $actionWord `"$($searchServiceApplication.Name)`"; this can take several minutes..."
+                    Write-Host -ForegroundColor White "  - $actionWord '$($searchServiceApplication.Name)'; this can take several minutes..."
                     try
                     {
                         Invoke-Expression -Command "`$searchServiceApplication | $cmdlet"
@@ -484,7 +484,7 @@ function Request-SPSearchServiceApplicationStatus
                         if (!$?) {throw}
                         if (Invoke-Expression -Command "$statusCheck")
                         {
-                            Write-Host -ForegroundColor White "  - `"$($searchServiceApplication.Name)`" is now " -NoNewline
+                            Write-Host -ForegroundColor White "  - '$($searchServiceApplication.Name)' is now " -NoNewline
                             Write-Host -ForegroundColor $color "$desiredStatus"
                         }
                         else
@@ -494,13 +494,13 @@ function Request-SPSearchServiceApplicationStatus
                     }
                     catch
                     {
-                        Write-Warning "Could not $action `"$($searchServiceApplication.Name)`""
+                        Write-Warning "Could not $action '$($searchServiceApplication.Name)'"
                     }
                 }
             }
             catch
             {
-             Write-Warning "Could not get status of `"$($searchServiceApplication.Name)`""
+             Write-Warning "Could not get status of '$($searchServiceApplication.Name)'"
             }
         }
         Write-Host -ForegroundColor White " - Done $($actionWord.ToLower()) Search Service Application(s)."
@@ -527,7 +527,13 @@ function Update-ContentDatabases
             $UseSnapshotParameter = @{}
             Write-Verbose -Message " - Not using SQL snapshots to upgrade content databases, either because useSQLSnapshot not specified or the SharePoint farm is 2016 or newer."
         }
-        Add-PSSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue
+        if ($null -eq (Get-PsSnapin | Where-Object {$_.Name -eq "Microsoft.SharePoint.PowerShell"}) -and $null -eq (Get-Module -Name "SharePointServer"))
+        {
+            Write-Output " - Loading SharePoint PowerShell Snapin..."
+            # Added the line below to match what the SharePoint.ps1 file implements (normally called via the SharePoint Management Shell Start Menu shortcut)
+            if (!($Host.Name -eq "ServerRemoteHost")) {$Host.Runspace.ThreadOptions = "ReuseThread"}
+            Add-PsSnapin Microsoft.SharePoint.PowerShell -ErrorAction SilentlyContinue | Out-Null
+        }
         # Updated to include all content databases, including ones that are "stopped"
         [array]$contentDatabases = Get-SPDatabase | Where-Object {$null -ne $_.WebApplication} | Sort-Object Name
         Write-Host -ForegroundColor White " - Upgrading SharePoint content databases:"
@@ -636,5 +642,26 @@ function Get-SPYear
         }
     }
     return $spVer, $spYear
+}
+
+function Stop-SearchCrawl
+{
+    foreach ($ssa in  Get-SPEnterpriseSearchServiceApplication)
+    {
+        $contentSources = $ssa | Get-SPEnterpriseSearchCrawlContentSource | Where-Object {$_.Type -eq "SharePoint"}
+        foreach ($contentSource in $contentSources)
+        {
+            if ($contentSource.EnableContinuousCrawls -eq $true)
+            {
+                Write-Output " - Disabling continuous crawls on content source '$($contentSource.Name)'..."
+                $contentSource.EnableContinuousCrawls = $false
+                $contentSource.Update()
+            }
+            else
+            {
+                Write-Output " - Continuous crawls are already disabled on '$($contentSource.Name)'."
+            }
+        }
+    }
 }
 #endregion
