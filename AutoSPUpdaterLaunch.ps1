@@ -351,10 +351,17 @@ Get-SPProduct -Local
 if (Confirm-LocalSession)
 {
     $caWebApp = Get-SPWebApplication -IncludeCentralAdministration | Where-Object {$_.IsAdministrationWebApplication}
-    $caWebAppUrl = ($caWebApp.Url).TrimEnd("/")
-    Write-Host -ForegroundColor White " - Launching '$caWebAppUrl/_admin/FarmServers.aspx'..."
-    Write-Host -ForegroundColor White " - You can use this to track the status of each server's configuration."
-    Start-Process "$caWebAppUrl/_admin/FarmServers.aspx" -WindowStyle Minimized
+    if ($null -ne $caWebApp)
+    {
+        $caWebAppUrl = ($caWebApp.Url).TrimEnd("/")
+        Write-Host -ForegroundColor White " - Launching '$caWebAppUrl/_admin/FarmServers.aspx'..."
+        Write-Host -ForegroundColor White " - You can use this to track the status of each server's configuration."
+        Start-Process "$caWebAppUrl/_admin/FarmServers.aspx" -WindowStyle Minimized
+    }
+    else
+    {
+        Write-Warning "Could not get Central Admin URL (possible issue in SP2016?)"
+    }
 }
 #endregion
 
@@ -398,11 +405,18 @@ if (Test-UpgradeRequired -eq $true)
         if (Confirm-LocalSession)
         {
             $caWebApp = Get-SPWebApplication -IncludeCentralAdministration | Where-Object {$_.IsAdministrationWebApplication}
-            $caWebAppUrl = ($caWebApp.Url).TrimEnd("/")
-            Write-Host -ForegroundColor White " - Launching '$caWebAppUrl/_admin/DatabaseStatus.aspx'..."
-            Write-Host -ForegroundColor White " - You can use this to track the status of each content database upgrade."
-            Start-Sleep -Seconds 3
-            Start-Process "$caWebAppUrl/_admin/DatabaseStatus.aspx" -WindowStyle Minimized
+            if ($null -ne $caWebApp)
+            {
+                $caWebAppUrl = ($caWebApp.Url).TrimEnd("/")
+                Write-Host -ForegroundColor White " - Launching '$caWebAppUrl/_admin/DatabaseStatus.aspx'..."
+                Write-Host -ForegroundColor White " - You can use this to track the status of each content database upgrade."
+                Start-Sleep -Seconds 3
+                Start-Process "$caWebAppUrl/_admin/DatabaseStatus.aspx" -WindowStyle Minimized
+            }
+            else
+            {
+                Write-Warning "Could not get Central Admin URL (possible issue in SP2016?)"
+            }
         }
         #endregion
         $databaseUpgradeAttempted = $true
