@@ -31,7 +31,7 @@ function InstallUpdatesFromPatchPath
                                   "17044" = "Installer was unable to run detection for this package"}
 
     # Get all CUs and PUs
-    $updatesToInstall = Get-ChildItem -Path "$patchPath" -Include office2010*.exe,ubersrv*.exe,ubersts*.exe,*pjsrv*.exe,sharepointsp2013*.exe,coreserver201*.exe,sts201*.exe,wssloc201*.exe,sts-subscription-*.exe,wssloc-subscription-*.exe,svrproofloc201*.exe,oserver*.exe,wac*.exe,oslpksp*.exe -Recurse -ErrorAction SilentlyContinue | Sort-Object -Descending
+    $updatesToInstall = Get-ChildItem -Path "$patchPath" -Include office2010*.exe,ubersrv*.exe,ubersts*.exe,*pjsrv*.exe,sharepointsp2013*.exe,coreserver201*.exe,sts201*.exe,wssloc201*.exe,sts-subscription-*.exe,wssloc-subscription-*.exe,uber-subscription-*.exe,svrproofloc201*.exe,oserver*.exe,wac*.exe,oslpksp*.exe -Recurse -ErrorAction SilentlyContinue | Sort-Object -Descending
     # Look for Server Update installers
     if ($updatesToInstall)
     {
